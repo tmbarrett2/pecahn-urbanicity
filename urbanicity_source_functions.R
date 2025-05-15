@@ -1,5 +1,4 @@
 # Urbanicity Index for Anthropological Fieldsites - Source Functions
-# Created by Tyler Barrett, Lev Kolinski, and Melanie Martin on May 2, 2025
 # Developed as Part of the Population Ecology, Aging, and Health Network (PEcAHN)
 
 # Create Boundary for Each Community
@@ -30,6 +29,7 @@
               )
           } else if (!is.null(custom_bbox) && 
                      all(c("nw_lat", "nw_lon", "ne_lat", "ne_lon", "sw_lat", "sw_lon", "se_lat", "se_lon") %in% names(custom_bbox))) {
+            
             # Use all four corners if provided
               bbox <- c(
                 left = min(custom_bbox$nw_lon, custom_bbox$sw_lon),
@@ -38,6 +38,7 @@
                 top = max(custom_bbox$nw_lat, custom_bbox$ne_lat)
               )
           } else {
+            
             # Calculate offsets based on the point's latitude
               lat_offset_km <- distance_km / 110.57
             
@@ -71,9 +72,6 @@
     
     return(result)
   }
-
-# Test bounding box function...
-  bbox_test <- create_bounding_boxes(test_data)
   
 # Compute Urbanicity Metric For Single Location
   compute_urbanicity <- function(location_data, name = NULL,
@@ -142,22 +140,35 @@
             osmdata::add_osm_feature(key = "highway") %>%
             osmdata::osmdata_sf()
           
-          # Define road classifications
-            paved_roads <- c("primary", "secondary", "tertiary")
-            unpaved_roads <- c("track", "path", "unpaved")
+          # Define surface types
+            paved_surfaces <- c("paved", "asphalt", "concrete")
+            unpaved_surfaces <- c("unpaved", "dirt", "gravel", "fine_gravel", "sand", "grass", "ground", "earth", "mud", "compacted", "unclassified")
           
-            if (!is.null(roads_data$osm_lines) && nrow(roads_data$osm_lines) > 0) {
-              roads_sf <- roads_data$osm_lines
+          if (!is.null(roads_data$osm_lines) && nrow(roads_data$osm_lines) > 0) {
+            roads_sf <- roads_data$osm_lines
             
-            # Classify roads
+            # Check if surface column exists
+              if (!"surface" %in% colnames(roads_sf)) {
+                cat("  Surface data does not exist in the OSM data. Using highway types for classification.\n")
+                roads_sf$surface <- NA
+              }
+              
+            # Classify roads based on surface tag
               roads_sf$road_type <- "other"
-              roads_sf$road_type[roads_sf$highway %in% paved_roads] <- "paved"
-              roads_sf$road_type[roads_sf$highway %in% unpaved_roads] <- "unpaved"
+              roads_sf$road_type[roads_sf$surface %in% paved_surfaces] <- "paved"
+              roads_sf$road_type[roads_sf$surface %in% unpaved_surfaces] <- "unpaved"
+            
+            # Classify roads based on highway tag for tracks and paths
+            # This helps when surface information is missing but highway type indicates unpaved
+              if ("highway" %in% colnames(roads_sf)) {
+                unpaved_highway_types <- c("track", "path")
+                roads_sf$road_type[roads_sf$highway %in% unpaved_highway_types] <- "unpaved"
+              }
             
             # Calculate road lengths
               roads_sf <- sf::st_transform(roads_sf, crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84"))
               roads_sf$length <- as.numeric(sf::st_length(roads_sf))
-            
+              
             # Summarize by road type
               road_summary <- aggregate(as.numeric(roads_sf$length), by = list(road_type = roads_sf$road_type), FUN = sum)
             
@@ -172,18 +183,18 @@
               } else {
                 results$paved_to_unpaved_ratio <- Inf
               }
-              
+            
               results$pct_paved_roads <- 100 * as.numeric(paved_length / total_length)
             } else {
               results$paved_to_unpaved_ratio <- NA
               results$pct_paved_roads <- NA
               cat("  No roads found in the area.\n")
             }
-          }, error = function(e) {
-            cat("  Error processing roads:", e$message, "\n")
-            results$paved_to_unpaved_ratio <- NA
-            results$pct_paved_roads <- NA
-          })
+            }, error = function(e) {
+              cat("  Error processing roads:", e$message, "\n")
+              results$paved_to_unpaved_ratio <- NA
+              results$pct_paved_roads <- NA
+        })
       }
     
     # Number of Formal Shops
@@ -336,35 +347,35 @@
           
           if (!is.null(buildings_data$osm_polygons) && nrow(buildings_data$osm_polygons) > 0) {
             # Transform to a suitable projection for accurate area calculation
-            buildings_projected <- sf::st_transform(
-              buildings_data$osm_polygons, 
-              crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84")
-            )
+              buildings_projected <- sf::st_transform(
+                buildings_data$osm_polygons, 
+                crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84")
+              )
             
             # Calculate area of each building
-            buildings_projected$area <- sf::st_area(buildings_projected)
+              buildings_projected$area <- sf::st_area(buildings_projected)
             
             # Calculate total building area
-            total_building_area <- sum(as.numeric(buildings_projected$area))
+              total_building_area <- sum(as.numeric(buildings_projected$area))
             
             # Calculate bounding box area
-            poly_projected <- sf::st_transform(
-              poly, 
-              crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84")
-            )
-            bbox_area <- as.numeric(sf::st_area(poly_projected))
+              poly_projected <- sf::st_transform(
+                poly, 
+                crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84")
+              )
+              bbox_area <- as.numeric(sf::st_area(poly_projected))
             
             # Calculate building density (% of area covered by buildings)
-            building_density <- (total_building_area / bbox_area) * 100
-            
-            results$building_density_pct <- as.numeric(building_density)
-          } else {
-            results$building_density_pct <- 0
-          }
-        }, error = function(e) {
-          cat("  Error processing buildings:", e$message, "\n")
-          results$building_density_pct <- NA
-        })
+              building_density <- (total_building_area / bbox_area) * 100
+              
+              results$building_density_pct <- as.numeric(building_density)
+            } else {
+              results$building_density_pct <- 0
+            }
+          }, error = function(e) {
+            cat("  Error processing buildings:", e$message, "\n")
+            results$building_density_pct <- NA
+          })
       }
     
     cat("Processing complete for:", name, "\n\n")
@@ -372,19 +383,6 @@
     # Convert results list to a dataframe
       return(as.data.frame(lapply(results, function(x) if(length(x) == 0) NA else x)))
   }
-  
-# Test urbanicity function...
-  single_result_test <- compute_urbanicity(
-    bbox_test[[1]],
-    roads = TRUE,
-    shops = TRUE,
-    healthcare = TRUE,
-    transport = TRUE,
-    financial = TRUE,
-    schools = TRUE,
-    cell_towers = TRUE,
-    buildings = TRUE
-  )
  
 # Apply compute_urbanicity Function to a List of Locations
 # locations_list is the output from the bounding boxes function above.
@@ -440,9 +438,6 @@
       
       return(combined_results)
   }
-  
-# Test iterative urbanicity function...
-  iterative_result_test <- compute_urbanicity_iterative(bbox_test, metrics = c("all"))
   
   
   
