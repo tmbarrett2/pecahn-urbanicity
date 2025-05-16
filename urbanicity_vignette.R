@@ -4,8 +4,7 @@
 # Set Your File Path
 # This is the path to the folder where you downloaded the test data and source functions.
 # For example, mine is: "C:/Users/tmbar/OneDrive - Duke University/Active Projects/pecahn/test_data"
-  fp = "C:/Users/tmbar/OneDrive - Duke University/Active Projects/pecahn/test_data"
-  #fp = "your_file_path"
+  fp = "your_file_path"
 
 # Load Test Data
   # The test_data_boundaries data table provides northeast, southeast, southwest, and northwest coordinates for seven communities.
