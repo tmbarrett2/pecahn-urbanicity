@@ -2,7 +2,7 @@
 # Developed as Part of the Population Ecology, Aging, and Health Network (PEcAHN)
 
 # Create Boundary for Each Community
-# Provide specific boundary coordinates (custom_bbox) or use a pre-specified distance around a central location (distance_km).
+# Provide specific boundary coordinates (custom_bbox) or use a pre-specified distance around a central point (distance_km).
 # Function defaults to the custom coordinates if provided.
   create_bounding_boxes <- function(gps_df, distance_km = 5, custom_bbox = NULL) {
     
@@ -73,8 +73,8 @@
     return(result)
   }
   
-# Compute Urbanicity Metric For Single Location
-  compute_urbanicity <- function(location_data, name = NULL,
+# Compute Urbanicity Metric For Single community
+  compute_urbanicity <- function(community_data, name = NULL,
                                  roads = TRUE,
                                  shops = TRUE,
                                  healthcare = TRUE,
@@ -95,16 +95,16 @@
       library(osmdata)
       library(sf)
     
-    # Extract the bbox from the location_data
-      bbox <- location_data$bbox
+    # Extract the bbox from the community_data
+      bbox <- community_data$bbox
     
     # If name is not provided, construct it from metadata
       if (is.null(name)) {
-        name <- paste(location_data$project, location_data$ethnicity, location_data$community, sep = " - ")
+        name <- paste(community_data$project, community_data$ethnicity, community_data$community, sep = " - ")
       }
     
     # Print processing status
-      cat("Processing location:", name, "\n")
+      cat("Processing community:", name, "\n")
     
     # Create sf polygon directly from the bbox coordinates
       bbox_matrix <- matrix(
@@ -119,14 +119,14 @@
       poly <- sf::st_polygon(list(bbox_matrix)) %>% sf::st_sfc(crs = 4326)
     
     # Center point for calculations
-      center_lat <- location_data$lat
-      center_lon <- location_data$lon
+      center_lat <- community_data$lat
+      center_lon <- community_data$lon
     
     # Initialize results with base information
       results <- list(
-        project = location_data$project,
-        ethnicity = location_data$ethnicity,
-        community = location_data$community
+        project = community_data$project,
+        ethnicity = community_data$ethnicity,
+        community = community_data$community
       )
     
     # Define bounding box for osmdata in the correct format
@@ -206,17 +206,17 @@
             osmdata::osmdata_sf()
           
           if (!is.null(shops_data$osm_points) && nrow(shops_data$osm_points) > 0) {
-            # Count formal shops
-            formal_shops <- c("supermarket", "convenience", "department_store", "mall", "grocery", "general")
-            formal_count <- sum(shops_data$osm_points$shop %in% formal_shops)
-            results$n_formal_shops <- formal_count
-          } else {
-            results$n_formal_shops <- 0
-          }
-        }, error = function(e) {
-          cat("  Error processing shops:", e$message, "\n")
-          results$n_formal_shops <- NA
-        })
+            
+            # Count all shops
+              total_shops_count <- nrow(shops_data$osm_points)
+              results$n_shops <- total_shops_count
+            } else {
+              results$n_shops <- 0
+            }
+          }, error = function(e) {
+            cat("  Error processing shops:", e$message, "\n")
+            results$n_shops <- NA
+         })
       }
     
     # Number of Healthcare Facilities and Distance to Nearest Healthcare Facility
@@ -309,8 +309,8 @@
             has_school <- TRUE
           }
           
-          # Return "yes" or "no"
-          results$school <- ifelse(has_school, "yes", "no")
+          # Return "Yes" or "No"
+          results$school <- ifelse(has_school, "Yes", "No")
           
         }, error = function(e) {
           cat("  Error processing schools:", e$message, "\n")
@@ -384,10 +384,10 @@
       return(as.data.frame(lapply(results, function(x) if(length(x) == 0) NA else x)))
   }
  
-# Apply compute_urbanicity Function to a List of Locations
-# locations_list is the output from the bounding boxes function above.
+# Apply compute_urbanicity Function to a List of Communities
+# communities_list is the output from the bounding boxes function above.
 # metrics is a vector of the measures you want to compute.
-  compute_urbanicity_iterative <- function(locations_list, metrics = c("all")) {
+  compute_urbanicity_iterative <- function(communities_list, metrics = c("all")) {
     
     # Set up which metrics to analyze based on user input
       do_roads <- "all" %in% metrics || "roads" %in% metrics
@@ -402,15 +402,15 @@
     # Initialize an empty list to store results
       all_results <- list()
     
-    # Process each location
-      for (i in seq_along(locations_list)) {
-        location_name <- names(locations_list)[i]
-        location_data <- locations_list[[i]]
+    # Process each community
+      for (i in seq_along(communities_list)) {
+        community_name <- names(communities_list)[i]
+        community_data <- communities_list[[i]]
         
-        # Process the location with selected metrics
+        # Process the community with selected metrics
           result <- compute_urbanicity(
-            location_data, 
-            name = location_name,
+            community_data, 
+            name = community_name,
             roads = do_roads,
             shops = do_shops,
             healthcare = do_healthcare,
@@ -439,7 +439,69 @@
       return(combined_results)
   }
   
+# Plot Results
+  # Bar Plot For Numeric Variables
+    create_numeric_plot <- function(data, var_name) {
+    
+    # Load packages
+      library(ggplot2)
+      library(dplyr)
+    
+    # Handle NA values
+      data_filtered <- data %>% 
+        filter(!is.na(!!sym(var_name)))
+    
+    # Determine format based on variable name
+    # Use whole numbers for variables starting with "n_", three decimals for others
+      format_string <- ifelse(startsWith(var_name, "n_"), "%.0f", "%.3f")
+    
+    # Create plot
+      p <- data_filtered %>%
+        mutate(community = paste(project, community, sep=": ")) %>%
+        arrange(desc(!!sym(var_name))) %>%
+        mutate(community = factor(community, levels = community)) %>%
+        ggplot(aes(x = community, y = !!sym(var_name), fill = project)) +
+        geom_bar(stat = "identity") +
+        scale_fill_viridis_d() +
+        geom_text(aes(label = sprintf(format_string, !!sym(var_name))), 
+                  hjust = -0.2) +
+        labs(title = paste("Summary of", var_name),
+             x = "Community",
+             y = var_name) +
+        theme_minimal() +
+        theme(legend.position = "top") +
+        scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+        coord_flip()
+    
+    return(p)
+  }
   
+  # Iterate Plotting Function Over All Measures (Continuous Measures Only)
+    create_summary_plots <- function(data) {
+    
+    # Load packages
+      library(ggplot2)
+      library(dplyr)
+    
+    # Get all column names except ID columns
+      all_vars <- names(data)
+      all_vars <- all_vars[!all_vars %in% c("project", "community")]
+    
+    # Create a list to store all plots
+      all_plots <- list()
+    
+    # Create plots for each variable
+      for (var in all_vars) {
+        
+        # Check if variable is numeric (continuous)
+        if (is.numeric(data[[var]])) {
+          all_plots[[var]] <- create_numeric_plot(data, var)
+        }
+      }
+    
+    # Return the list of plots
+      return(all_plots)
+  }
   
   
   

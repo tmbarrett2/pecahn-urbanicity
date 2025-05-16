@@ -29,7 +29,8 @@
 # Compute Urbanicity Measures
   # This function takes the bounding box (bbox) we created above as the main argument.
   # You also need to specify which metrics to calculate. The default is to calculate all metrics,
-  # but you can also change replace "all" below with any combination of the following to calculate only those metrics:
+  # but you can also replace "all" below with any combination of the following to calculate only those metrics:
+    
     # roads (percent of paved roads and ratio of paved-to-unpaved roads)
     # shops (number of formal shops / markets)
     # healthcare (presence of healthcare facilities [yes/no])
@@ -41,3 +42,16 @@
     
       test_results_boundaries <- compute_urbanicity_iterative(bbox_boundaries, metrics = c("all"))
       test_results_5km <- compute_urbanicity_iterative(bbox_5km, metrics = c("all"))
+      
+# Generate Summary Plots of the Results
+  summary_plots_boundaries <- create_summary_plots(test_results_boundaries)
+  summary_plots_5km <- create_summary_plots(test_results_5km)   
+      
+  # View Summary Plots for Continuous Measures
+    summary_plots_5km$paved_to_unpaved_ratio
+    summary_plots_5km$pct_paved_roads
+    summary_plots_5km$n_shops
+    summary_plots_5km$n_transport_stops
+    summary_plots_5km$n_financial
+    summary_plots_5km$building_density_pct
+      
