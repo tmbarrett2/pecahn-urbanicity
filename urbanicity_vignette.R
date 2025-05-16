@@ -1,6 +1,15 @@
 # Urbanicity Index for Anthropological Fieldsites - Vignette
 # Developed as Part of the Population Ecology, Aging, and Health Network (PEcAHN)
 
+# To run the code below, you will need to install two packages (osmdata and sf) for pulling data from OpenStreetMap.
+# Uncomment and run the following if you need to install the packages:
+  # install.packages("osmdata")
+  # install.packages("sf")
+
+# You will also need the following two packages for the plotting function to work. Uncomment and run as needed.
+  # install.packages("ggplot2")
+  # install.packages("dplyr")
+
 # Set Your File Path
 # This is the path to the folder where you downloaded the test data and source functions.
 # For example, mine is: "C:/Users/tmbar/OneDrive - Duke University/Active Projects/pecahn/test_data"
