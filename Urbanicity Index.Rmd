@@ -1,0 +1,121 @@
+---
+title: "Urbanicity Index"
+author: "Lev Kolinski"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# loading packages
+library(tidyverse)
+library(ggbiplot)
+
+## loading data....update fp as needed for your device
+results_example <- read.csv("./results_example.csv")
+```
+
+## Data processing
+Coding Yes/No as 1s and 0s, removing NAs, etc.
+```{r processing}
+proj_eth_comm_df<- results_example |> 
+  select(-ethnicity) |> 
+  na.omit() |> 
+  select(project:community)
+
+scores_scaled<- results_example |> 
+  select(paved_to_unpaved_ratio:building_density_pct) |> 
+  mutate(healthcare = ifelse(healthcare == "Yes", 1L, 0L)) |> 
+  mutate(school = ifelse(school == "Yes", 1L, 0L)) |> 
+  mutate(across(everything(), as.numeric)) |> 
+  na.omit()
+
+combined_df <- cbind(proj_eth_comm_df, scores_scaled)
+
+## removing cell towers bc no variance
+combined_df <- combined_df |> 
+  select(-n_cell_towers)
+
+# Remove rows with NA values
+combined_df_clean <- combined_df |> 
+  select(where(is.numeric)) |> 
+  na.omit()
+
+```
+
+## Running PCA
+We see that we explain 90.59% of cumulative variance across the first two PCs
+```{r PCA}
+# Scaling the data and running PCA
+pca_result <- prcomp(combined_df_clean, scale. = TRUE)
+
+summary(pca_result)
+
+```
+### Biplot
+```{r biplot}
+ggbiplot(pca_result,
+         obs.scale = 1,
+         var.scale = 1,
+         ellipse = TRUE,
+         circle = TRUE) +
+  theme_minimal()
+```
+
+### Inspecting loadings
+PC1 = general infrastructure and urban development (higher PC1 = more urban)
+
+PC2 = social services? (school/healthcare) (higher PC2 = less urban)
+```{r loadings}
+
+loadings <- pca_result$rotation
+
+loadings_df <- as_tibble(loadings, rownames = "variable")
+
+# Viewing top loadings for PC1 and PC2
+loadings_df |>
+  arrange(desc(abs(PC1))) |>
+  select(variable, PC1) 
+
+loadings_df |>
+  arrange(desc(abs(PC2))) |>
+  select(variable, PC2) 
+
+# Add PC1 and PC2 to the original dataframe
+## extracting pc scores for PC1 and 2
+pc_scores <- pca_result$x[, 1:2]
+colnames(pc_scores) <- c("PC1", "PC2")
+combined_df_with_pcs <- cbind(proj_eth_comm_df, combined_df_clean, pc_scores)
+```
+
+## plotting PC by community
+```{r plotting-PCs}
+pc1_summary <- combined_df_with_pcs |>
+  group_by(community, project) |>
+  summarize(mean_PC1 = mean(PC1), .groups = "drop") |> 
+   arrange(project, community) |> 
+  mutate(community = factor(community, levels = unique(community)))
+
+ggplot(pc1_summary, aes(x = community, y = mean_PC1, fill = project)) +
+  geom_col(position = "dodge") +
+  labs(title = "Mean PC1 Score by Community",
+       y = "Mean PC1 (Higher = More Urban)",
+       x = "Community") +
+  theme_minimal()+
+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+pc2_summary <- combined_df_with_pcs |>
+  group_by(community, project) |>
+  summarize(mean_PC2 = mean(PC2), .groups = "drop") |> 
+   arrange(project, community) |> 
+  mutate(community = factor(community, levels = unique(community)))
+
+ggplot(pc2_summary, aes(x = community, y = mean_PC2, fill = project)) +
+  geom_col(position = "dodge") +
+  labs(title = "Mean PC2 Score by Community",
+       y = "Mean PC2 (Higher = Less Urban)",
+       x = "Community") +
+  theme_minimal()+
+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
