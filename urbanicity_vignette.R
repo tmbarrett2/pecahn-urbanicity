@@ -6,6 +6,10 @@
   # install.packages("osmdata")
   # install.packages("sf")
 
+## You will also need the following packages for calculating nighttime light with NASA data
+  #install.packages("terra")
+  #install.packages("raster")
+
 # You will also need the following two packages for the plotting function to work. Uncomment and run as needed.
   # install.packages("ggplot2")
   # install.packages("dplyr")
@@ -47,6 +51,7 @@
     # schools (presence of schools [yes/no])
     # cell_towers (number of cell towers)
     # buildings (building density [i.e., percent of area covered by buildings])
+    # nighttime light (intensity of nighttime light)
     
       test_results_boundaries <- compute_urbanicity_iterative(bbox_boundaries, metrics = c("all"))
       test_results_5km <- compute_urbanicity_iterative(bbox_5km, metrics = c("all"))
@@ -62,4 +67,6 @@
     summary_plots_5km$n_transport_stops
     summary_plots_5km$n_financial
     summary_plots_5km$building_density_pct
+    summary_plots_5km$nighttime_light
+    
       

@@ -73,6 +73,26 @@
     return(result)
   }
   
+  
+# Compute nighttime light metric for use within the broader compute_urbanicity() 
+# and compute_urabicity_iterative() functions
+  
+# loading nighttime light data image from NASA (VIIRS)
+  ## Earth at Night (Black Marble) 2016 Color Maps
+  ## maximum value is 193565 (nW/cm²/sr)
+  ## higher value = more bright
+  ## using 0.1 degrees (3600x1800) resolution
+  ## Learn more here: https://www.visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps/144944l
+
+  viirs_url <- "https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_01deg_geo.tif"
+  viirs_raster <- raster(viirs_url)
+  
+  get_light_mean <- function(polygon_sf, raster_data) {
+      polygon_sp <- as(polygon_sf, "Spatial")
+      light_mean <- extract(raster_data, polygon_sp, fun = mean, na.rm = TRUE)
+      return(round(light_mean, 3))
+    }
+  
 # Compute Urbanicity Metric For Single community
   compute_urbanicity <- function(community_data, name = NULL,
                                  roads = TRUE,
@@ -82,7 +102,8 @@
                                  financial = TRUE,
                                  schools = TRUE,
                                  cell_towers = TRUE,
-                                 buildings = TRUE) {
+                                 buildings = TRUE,
+                                 nighttime_light = TRUE) {
     # Load required libraries
       if (!requireNamespace("osmdata", quietly = TRUE)) {
         stop("Package 'osmdata' needed for this function to work.")
@@ -91,9 +112,19 @@
         stop("Package 'sf' needed for this function to work.")
       }
     
+    if (!requireNamespace("terra", quietly = TRUE)) {
+      stop("Package 'terra' needed for this function to work.")
+    }
+    
+    if (!requireNamespace("raster", quietly = TRUE)) {
+      stop("Package 'raster' needed for this function to work.")
+    }
+    
     # Import functions
       library(osmdata)
       library(sf)
+      library(terra)
+      library(raster)
     
     # Extract the bbox from the community_data
       bbox <- community_data$bbox
@@ -377,6 +408,24 @@
             results$building_density_pct <- NA
           })
       }
+      
+      # Nighttime Light (from VIIRS)
+      if (nighttime_light) {
+        tryCatch({
+          cat("  Analyzing nighttime light...\n")
+          poly_for_nighttime_light <-  poly |> 
+            st_sf()
+          poly_for_nighttime_light$dummy <- 1 # adding dummy column so that code works
+          
+          nighttime_light <- get_light_mean(poly_for_nighttime_light,viirs_raster)[1]
+          
+          results$nighttime_light <- as.numeric(nighttime_light)
+          
+        }, error = function(e) {
+          cat("  Error processing nighttime light:", e$message, "\n")
+          results$nighttime_light <- NA
+        })
+      }
     
     cat("Processing complete for:", name, "\n\n")
     
@@ -398,7 +447,8 @@
       do_schools <- "all" %in% metrics || "schools" %in% metrics
       do_cell_towers <- "all" %in% metrics || "cell_towers" %in% metrics
       do_buildings <- "all" %in% metrics || "buildings" %in% metrics
-    
+      do_nighttime_light <- "all" %in% metrics || "nighttime_light" %in% metrics
+      
     # Initialize an empty list to store results
       all_results <- list()
     
@@ -418,7 +468,8 @@
             financial = do_financial,
             schools = do_schools,
             cell_towers = do_cell_towers,
-            buildings = do_buildings
+            buildings = do_buildings,
+            nighttime_light = do_nighttime_light
         )
         
         # Add to results list
