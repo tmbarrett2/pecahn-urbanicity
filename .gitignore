@@ -51,3 +51,4 @@ rsconnect/
 # Data Files
 *.csv
 /PEcAHN
+.DS_Store
