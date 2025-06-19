@@ -89,7 +89,7 @@
     # Convert points to same CRS as raster
       from_sp <- sf::st_transform(from_point, crs = raster::crs(friction_raster))
       to_sp <- sf::st_transform(to_points, crs = raster::crs(friction_raster))
-    
+      
     # Extract coordinates
       from_coords <- sf::st_coordinates(from_sp)
       to_coords <- sf::st_coordinates(to_sp)
@@ -108,6 +108,123 @@
     # Return minimum travel time in minutes
       min_time <- min(cost_dist, na.rm = TRUE)
       return(ifelse(is.finite(min_time), min_time, NA))
+  }
+  
+# Helper Function to Extend Search for Very Remote Communities
+  search_facilities_progressive <- function(center_point, bbox, facility_type, 
+                                            friction_raster = NULL, 
+                                            max_search_multiplier = 50,
+                                            search_increment = 2) {
+    
+    search_multiplier <- 0
+    found_facilities <- NULL
+    
+    while (is.null(found_facilities) && search_multiplier <= max_search_multiplier) {
+      # Define search bbox
+        if (search_multiplier == 0) {
+          search_bbox <- c(bbox["left"], bbox["bottom"], bbox["right"], bbox["top"])
+        } else {
+          width <- bbox["right"] - bbox["left"]
+          height <- bbox["top"] - bbox["bottom"]
+          search_bbox <- c(
+            bbox["left"] - width * search_multiplier,
+            bbox["bottom"] - height * search_multiplier,
+            bbox["right"] + width * search_multiplier,
+            bbox["top"] + height * search_multiplier
+          )
+        }
+      
+      # Search for facilities based on type
+        if (facility_type == "paved_road") {
+          roads_data <- osmdata::opq(search_bbox) %>%
+            osmdata::add_osm_feature(key = "highway") %>%
+            osmdata::add_osm_feature(key = "surface", value = c("paved", "asphalt", "concrete")) %>%
+            osmdata::osmdata_sf()
+          
+          if (!is.null(roads_data$osm_lines) && nrow(roads_data$osm_lines) > 0) {
+            found_facilities <- roads_data$osm_lines
+          }
+        } else if (facility_type == "healthcare") {
+          healthcare_data <- osmdata::opq(search_bbox) %>%
+            osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
+            osmdata::osmdata_sf()
+          
+          if (!is.null(healthcare_data$osm_points) && nrow(healthcare_data$osm_points) > 0) {
+            found_facilities <- healthcare_data$osm_points
+          }
+        } else if (facility_type == "school") {
+          school_data <- osmdata::opq(search_bbox) %>%
+            osmdata::add_osm_feature(key = "amenity", value = "school") %>%
+            osmdata::osmdata_sf()
+        
+        # Collect both points and polygons
+          school_points <- NULL
+          if (!is.null(school_data$osm_points) && nrow(school_data$osm_points) > 0) {
+            school_points <- sf::st_geometry(school_data$osm_points) %>% 
+              sf::st_sf(geometry = .)
+          }
+          
+          if (!is.null(school_data$osm_polygons) && nrow(school_data$osm_polygons) > 0) {
+            school_centroids <- sf::st_centroid(sf::st_geometry(school_data$osm_polygons)) %>%
+              sf::st_sf(geometry = .)
+            
+            if (is.null(school_points)) {
+              school_points <- school_centroids
+            } else {
+              school_points <- rbind(school_points, school_centroids)
+            }
+          }
+          
+          found_facilities <- school_points
+        }
+      
+      # Increment search area
+        if (is.null(found_facilities)) {
+          search_multiplier <- search_multiplier + search_increment
+          cat(sprintf("  No %s found, expanding search area (multiplier: %d)...\n", 
+                      facility_type, search_multiplier))
+        }
+      }
+    
+    # Calculate travel time if facilities found
+      if (!is.null(found_facilities) && nrow(found_facilities) > 0) {
+        if (!is.null(friction_raster)) {
+          # Check if we need to expand friction raster
+          facilities_extent <- sf::st_bbox(found_facilities)
+          friction_extent <- raster::extent(friction_raster)
+          
+          # If facilities are outside friction raster extent, return NA
+          if (facilities_extent["xmin"] < friction_extent@xmin ||
+              facilities_extent["xmax"] > friction_extent@xmax ||
+              facilities_extent["ymin"] < friction_extent@ymin ||
+              facilities_extent["ymax"] > friction_extent@ymax) {
+            
+            cat(sprintf("  Found %s outside friction raster extent. Returning NA.\n", facility_type))
+            return(NA)
+          }
+        
+        # For roads, convert to points
+          if (facility_type == "paved_road") {
+            suppressWarnings({
+              facility_points <- sf::st_cast(sf::st_geometry(found_facilities), "POINT") %>%
+                sf::st_sf(geometry = .)
+            })
+          } else {
+            facility_points <- found_facilities
+          }
+          
+          travel_time <- calculate_travel_time(center_point, facility_points, friction_raster)
+          return(travel_time)
+        } else {
+        # If no friction raster provided, return NA
+          cat("  No friction raster provided. Returning NA.\n")
+          return(NA)
+        }
+    }
+    
+    # If still no facilities found after maximum search
+      cat(sprintf("  No %s found within maximum search area.\n", facility_type))
+      return(NA)
   }
   
 # Compute Urbanicity Metric for Single Community
@@ -206,7 +323,7 @@
             friction_global <- raster::raster(friction_surface_path)
           
           # Crop to a larger area around the community (for searching)
-            search_buffer <- 0.5  # degrees (~50km)
+            search_buffer <- 10  # degrees (1000km)
             extent_buffered <- raster::extent(
               bbox["left"] - search_buffer,
               bbox["right"] + search_buffer,
@@ -288,67 +405,44 @@
             
             # Calculate travel time to nearest paved road
               paved_roads <- roads_sf[roads_sf$road_type == "paved", ]
-              
-              if (nrow(paved_roads) > 0) {
-                if (!is.null(friction_raster)) {
+                
+                if (nrow(paved_roads) > 0 && !is.null(friction_raster)) {
                   # Convert lines to points for travel time calculation
-                    suppressWarnings({
-                      paved_points <- sf::st_cast(paved_roads, "POINT")
-                    })
-                    results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points, friction_raster)
-                  } else {
-                  # Fallback: straight-line distance if no friction raster provided
-                    distances <- sf::st_distance(center_point, paved_roads)
-                    min_dist_m <- min(distances, na.rm = TRUE)
-                  # Assume walking speed of 5 km/h
-                    results$travel_time_paved_road_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-                }
-              } else {
-                # Search in larger area
-                  cat("  No paved roads in immediate area, searching wider region...\n")
-                  search_multiplier <- 2
-                  extended_bbox <- c(
-                    bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
-                    bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
-                    bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
-                    bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
+                  suppressWarnings({
+                    paved_points <- sf::st_cast(sf::st_geometry(paved_roads), "POINT") %>%
+                      sf::st_sf(geometry = .)
+                  })
+                  results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points, friction_raster)
+                } else {
+                  # Use progressive search for paved roads
+                  results$travel_time_paved_road_min <- search_facilities_progressive(
+                    center_point = center_point,
+                    bbox = bbox,
+                    facility_type = "paved_road",
+                    friction_raster = friction_raster,
+                    max_search_multiplier = 50
                   )
-                
-                  roads_extended <- osmdata::opq(extended_bbox) %>%
-                    osmdata::add_osm_feature(key = "highway") %>%
-                    osmdata::add_osm_feature(key = "surface", value = paved_surfaces) %>%
-                    osmdata::osmdata_sf()
-                
-                  if (!is.null(roads_extended$osm_lines) && nrow(roads_extended$osm_lines) > 0) {
-                    if (!is.null(friction_raster)) {
-                      suppressWarnings({
-                        paved_points_ext <- sf::st_cast(roads_extended$osm_lines, "POINT")
-                      })
-                      paved_points_ext <- sf::st_cast(roads_extended$osm_lines, "POINT")
-                      results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points_ext, friction_raster)
-                    } else {
-                      distances <- sf::st_distance(center_point, roads_extended$osm_lines)
-                      min_dist_m <- min(distances, na.rm = TRUE)
-                      results$travel_time_paved_road_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-                    }
-                  } else {
-                    results$travel_time_paved_road_min <- NA
-                  }
                 }
-                
-              } else {
-                results$paved_to_unpaved_ratio <- NA
-                results$pct_paved_roads <- NA
-                results$travel_time_paved_road_min <- NA
-                cat("  No roads found in the area.\n")
-              }
-            }, error = function(e) {
-              cat("  Error processing roads:", e$message, "\n")
+            } else {  # This else handles when no roads are found in the initial area
               results$paved_to_unpaved_ratio <- NA
               results$pct_paved_roads <- NA
-              results$travel_time_paved_road_min <- NA
-            })
-          }  
+              # Still try progressive search for paved roads
+              results$travel_time_paved_road_min <- search_facilities_progressive(
+                center_point = center_point,
+                bbox = bbox,
+                facility_type = "paved_road",
+                friction_raster = friction_raster,
+                max_search_multiplier = 50
+              )
+              cat("  No roads found in the area.\n")
+            }
+        }, error = function(e) {
+          cat("  Error processing roads:", e$message, "\n")
+          results$paved_to_unpaved_ratio <- NA
+          results$pct_paved_roads <- NA
+          results$travel_time_paved_road_min <- NA
+        })
+      } 
                
     
     # Number of Formal Shops
@@ -373,61 +467,47 @@
          })
       }
     
+    # Number of Public Transport Stops
+      if (transport) {
+        tryCatch({
+          cat("  Analyzing transport infrastructure...\n")
+          transport_data <- osmdata::opq(osm_bbox) %>%
+            osmdata::add_osm_feature(key = "public_transport") %>%
+            osmdata::add_osm_feature(key = "highway", value = c("bus_stop")) %>%
+            osmdata::add_osm_feature(key = "railway", value = c("station", "halt")) %>%
+            osmdata::osmdata_sf()
+          
+          transport_count <- 0
+          if (!is.null(transport_data$osm_points) && nrow(transport_data$osm_points) > 0) {
+            transport_count <- transport_count + nrow(transport_data$osm_points)
+          }
+          
+          results$n_transport_stops <- transport_count
+          
+        }, error = function(e) {
+          cat("  Error processing transport infrastructure:", e$message, "\n")
+          results$n_transport_stops <- NA
+        })
+      }
+      
     # Travel time to nearest Healthcare Facility
       if (healthcare) {
         tryCatch({
           cat("  Analyzing healthcare facilities...\n")
-          healthcare_data <- osmdata::opq(osm_bbox) %>%
-            osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
-            osmdata::osmdata_sf()
-          
-          healthcare_points <- NULL
-          if (!is.null(healthcare_data$osm_points) && nrow(healthcare_data$osm_points) > 0) {
-            healthcare_points <- healthcare_data$osm_points
-          }
-          
-          if (!is.null(healthcare_points) && nrow(healthcare_points) > 0) {
-            if (!is.null(friction_raster)) {
-              results$travel_time_healthcare_min <- calculate_travel_time(center_point, healthcare_points, friction_raster)
-            } else {
-              # Fallback: straight-line distance if no friction raster provided
-                distances <- sf::st_distance(center_point, healthcare_points)
-                min_dist_m <- min(distances, na.rm = TRUE)
-                results$travel_time_healthcare_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-            }
-          } else {
-            # Search in larger area
-              cat("  No healthcare facilities in immediate area, searching wider region...\n")
-              search_multiplier <- 2
-              extended_bbox <- c(
-                bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
-                bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
-                bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
-                bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
-              )
-            
-              healthcare_extended <- osmdata::opq(extended_bbox) %>%
-                osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
-                osmdata::osmdata_sf()
-            
-            if (!is.null(healthcare_extended$osm_points) && nrow(healthcare_extended$osm_points) > 0) {
-              if (!is.null(friction_raster)) {
-                results$travel_time_healthcare_min <- calculate_travel_time(center_point, healthcare_extended$osm_points, friction_raster)
-              } else {
-                distances <- sf::st_distance(center_point, healthcare_extended$osm_points)
-                min_dist_m <- min(distances, na.rm = TRUE)
-                results$travel_time_healthcare_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-              }
-            } else {
+                
+          results$travel_time_healthcare_min <- search_facilities_progressive(
+            center_point = center_point,
+            bbox = bbox,
+            facility_type = "healthcare",
+            friction_raster = friction_raster,
+            max_search_multiplier = 50
+            )
+                
+            }, error = function(e) {
+              cat("  Error processing healthcare facilities:", e$message, "\n")
               results$travel_time_healthcare_min <- NA
-            }
+            })
           }
-          
-        }, error = function(e) {
-          cat("  Error processing healthcare facilities:", e$message, "\n")
-          results$travel_time_healthcare_min <- NA
-        })
-      }
     
     # Number of Financial Services
       if (financial) {
@@ -451,99 +531,22 @@
     # Travel time to nearest School
       if (schools) {
         tryCatch({
-          cat("  Analyzing schools...\n")
-          
-          school_data <- osmdata::opq(osm_bbox) %>%
-            osmdata::add_osm_feature(key = "amenity", value = "school") %>%
-            osmdata::osmdata_sf()
-          
-          school_points <- NULL
-          
-          # Collect points
-            if (!is.null(school_data$osm_points) && nrow(school_data$osm_points) > 0) {
-            # Keep only geometry for consistency
-              school_points <- sf::st_geometry(school_data$osm_points) %>% 
-                sf::st_sf(geometry = .)
-          }
-          
-          # Collect polygon centroids
-            if (!is.null(school_data$osm_polygons) && nrow(school_data$osm_polygons) > 0) {
-              school_centroids <- sf::st_centroid(school_data$osm_polygons) %>%
-                sf::st_geometry() %>%
-                sf::st_sf(geometry = .)
-              
-              if (is.null(school_points)) {
-                school_points <- school_centroids
-              } else {
-                # Combine geometries only
-                  school_points <- rbind(school_points, school_centroids)
-              }
-            }
-          
-          if (!is.null(school_points) && nrow(school_points) > 0) {
-            if (!is.null(friction_raster)) {
-              results$travel_time_school_min <- calculate_travel_time(center_point, school_points, friction_raster)
-            } else {
-              # Fallback: straight-line distance if no friction raster provided
-                distances <- sf::st_distance(center_point, school_points)
-                min_dist_m <- min(distances, na.rm = TRUE)
-                results$travel_time_school_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-            }
-          } else {
-            # Search in larger area
-              cat("  No schools in immediate area, searching wider region...\n")
-              search_multiplier <- 2
-              extended_bbox <- c(
-                bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
-                bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
-                bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
-                bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
-              )
-            
-              school_extended <- osmdata::opq(extended_bbox) %>%
-                osmdata::add_osm_feature(key = "amenity", value = "school") %>%
-                osmdata::osmdata_sf()
-              
-              extended_points <- NULL
-            
-            # Collect extended points
-              if (!is.null(school_extended$osm_points) && nrow(school_extended$osm_points) > 0) {
-                extended_points <- sf::st_geometry(school_extended$osm_points) %>%
-                  sf::st_sf(geometry = .)
-              }
-            
-            # Collect extended polygon centroids
-              if (!is.null(school_extended$osm_polygons) && nrow(school_extended$osm_polygons) > 0) {
-                extended_centroids <- sf::st_centroid(school_extended$osm_polygons) %>%
-                  sf::st_geometry() %>%
-                  sf::st_sf(geometry = .)
+        cat("  Analyzing schools...\n")
                 
-                if (is.null(extended_points)) {
-                  extended_points <- extended_centroids
-                } else {
-                  extended_points <- rbind(extended_points, extended_centroids)
-                }
-              }
-            
-              if (!is.null(extended_points) && nrow(extended_points) > 0) {
-                if (!is.null(friction_raster)) {
-                  results$travel_time_school_min <- calculate_travel_time(center_point, extended_points, friction_raster)
-                } else {
-                  distances <- sf::st_distance(center_point, extended_points)
-                  min_dist_m <- min(distances, na.rm = TRUE)
-                  results$travel_time_school_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-                }
-              } else {
-                results$travel_time_school_min <- NA
-              }
-            }
-          
-          }, error = function(e) {
-            cat("  Error processing schools:", e$message, "\n")
-            results$travel_time_school_min <- NA
+        results$travel_time_school_min <- search_facilities_progressive(
+          center_point = center_point,
+          bbox = bbox,
+          facility_type = "school",
+          friction_raster = friction_raster,
+          max_search_multiplier = 50
+        )
+                
+        }, error = function(e) {
+          cat("  Error processing schools:", e$message, "\n")
+          results$travel_time_school_min <- NA
           })
         }
-    
+            
     # Number of Cell Towers
       if (cell_towers) {
         tryCatch({
@@ -611,11 +614,11 @@
             
             viirs_raster <- raster(nighttime_light_path)
             
-            poly_for_nighttime_light <-  poly |> 
-              st_sf() |>
-              mutate(id = row_number())
+            # Convert to sf object and add id column
+            poly_for_nighttime_light <- sf::st_sf(geometry = poly)
+            poly_for_nighttime_light$id <- 1
             
-            nighttime_light <- get_light_mean(poly_for_nighttime_light,viirs_raster)[1]
+            nighttime_light <- get_light_mean(poly_for_nighttime_light, viirs_raster)[1]
             
             results$nighttime_light <- as.numeric(nighttime_light)
             

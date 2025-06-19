@@ -1,6 +1,22 @@
 # Urbanicity Index for Anthropological Fieldsites - Vignette
 # Developed as Part of the Population Ecology, Aging, and Health Network (PEcAHN)
 
+# This vignette provides step-by-step instructions to compute urbanicity measures for anthropological fieldsites.
+# Several public data sources are required to compute the urbanicity measures. They include:
+  
+  # 1. Friction surface data for calculating the travel time measures. For this vignette, we are using walking time raster
+  # files from the Malaria Atlas Project. The file is available for download here: https://malariaatlas.org/project-resources/accessibility-to-healthcare/
+  # And the associated paper is available here: https://doi.org/10.1038/s41591-020-1059-1
+
+  # 2. The data for estimating population density are from the Gridded Population of the World NASA dataset available here:
+  # https://www.earthdata.nasa.gov/data/projects/gpw
+
+  # 3. The data for calculating light intensity are from the Earth at Night (Black Marble) 2016 Color Maps NASA dataset, which can be accessed here:
+  # https://www.visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps/144944l
+
+# All PEcAHN members can access these data files in the following Box folder: https://duke.app.box.com/folder/326967081428
+# Please download the files to your folder with the source code before completing the vignette.
+
 # To run the code below, you will need to install the following packages.
   # install.packages("osmdata")
   # install.packages("sf")
@@ -37,8 +53,8 @@
   
 # Compute Urbanicity Measures
   # This function takes the bounding box (bbox) we created above as the main argument.
-  # You also need to specify which metrics to calculate. The default is to calculate all metrics,
-  # but you can choose not to compute specific metrics by changing TRUE to FALSE.
+  # You also need to specify which metrics to calculate. The default is to calculate all metrics
+  # by using metrics = c("all"), but you can also specify specific metrics as shown below.
     
     # roads (percent of paved roads and ratio of paved-to-unpaved roads)
     # shops (number of formal shops / markets)
@@ -60,30 +76,17 @@
     # nighttime_light_path (file path to image for computing nighttime light intensity)
     
       test_results_boundaries <- compute_urbanicity_iterative(bbox_boundaries,
-                                                              roads = TRUE,
-                                                              shops = TRUE,
-                                                              healthcare = TRUE,
-                                                              transport = TRUE,
-                                                              financial = TRUE,
-                                                              schools = TRUE,
-                                                              cell_towers = TRUE,
-                                                              buildings = TRUE,
-                                                              nighttime_light = TRUE,
-                                                              population = TRUE,
+                                                              metrics = c("roads", "shops", "healthcare",
+                                                                          "transport", "financial", "schools",
+                                                                          "cell_towers", "buildings", "nighttime_light", "population"),
                                                               friction_surface_path = paste0(fp, "/friction_surface_walking.geotiff"),
                                                               population_raster_path = paste0(fp, "/pop_raster.tif"),
                                                               nighttime_light_path = paste0(fp, "/nighttime_lights.tif"))
+      
       test_results_5km <- compute_urbanicity_iterative(bbox_5km,
-                                                       roads = TRUE,
-                                                       shops = TRUE,
-                                                       healthcare = TRUE,
-                                                       transport = TRUE,
-                                                       financial = TRUE,
-                                                       schools = TRUE,
-                                                       cell_towers = TRUE,
-                                                       buildings = TRUE,
-                                                       nighttime_light = TRUE,
-                                                       population = TRUE,
+                                                       metrics = c("roads", "shops", "healthcare",
+                                                                   "transport", "financial", "schools",
+                                                                   "cell_towers", "buildings", "nighttime_light", "population"),
                                                        friction_surface_path = paste0(fp, "/friction_surface_walking.geotiff"),
                                                        population_raster_path = paste0(fp, "/pop_raster.tif"),
                                                        nighttime_light_path = paste0(fp, "/nighttime_lights.tif"))
@@ -92,13 +95,18 @@
   summary_plots_boundaries <- create_summary_plots(test_results_boundaries)
   summary_plots_5km <- create_summary_plots(test_results_5km)   
       
-  # View Summary Plots for Continuous Measures
+  # View Summary Plots
     summary_plots_5km$paved_to_unpaved_ratio
     summary_plots_5km$pct_paved_roads
+    summary_plots_5km$travel_time_paved_road_min
     summary_plots_5km$n_shops
     summary_plots_5km$n_transport_stops
+    summary_plots_5km$travel_time_school_min
+    summary_plots_5km$travel_time_healthcare_min
+    summary_plots_5km$n_cell_towers
     summary_plots_5km$n_financial
     summary_plots_5km$building_density_pct
+    summary_plots_5km$pop_density
     summary_plots_5km$nighttime_light
     
       
