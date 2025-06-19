@@ -14,7 +14,7 @@
   # 3. The data for calculating light intensity are from the Earth at Night (Black Marble) 2016 Color Maps NASA dataset, which can be accessed here:
   # https://www.visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps/144944l
 
-# All PEcAHN members can access these data files in the following Box folder: https://duke.app.box.com/folder/326967081428
+# All PEcAHN members can access these data files in the following Google Drive folder: https://drive.google.com/drive/u/0/folders/1C6RWI7yhAM9UDjwMc7w9nxW30W5u3wee
 # Please download the files to your folder with the source code before completing the vignette.
 
 # To run the code below, you will need to install the following packages.

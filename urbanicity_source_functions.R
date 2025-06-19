@@ -136,34 +136,50 @@
       
       # Search for facilities based on type
         if (facility_type == "paved_road") {
+         # Search for ALL roads first
           roads_data <- osmdata::opq(search_bbox) %>%
             osmdata::add_osm_feature(key = "highway") %>%
-            osmdata::add_osm_feature(key = "surface", value = c("paved", "asphalt", "concrete")) %>%
             osmdata::osmdata_sf()
           
           if (!is.null(roads_data$osm_lines) && nrow(roads_data$osm_lines) > 0) {
-            found_facilities <- roads_data$osm_lines
-          }
-        } else if (facility_type == "healthcare") {
-          healthcare_data <- osmdata::opq(search_bbox) %>%
-            osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
-            osmdata::osmdata_sf()
+            roads_sf <- roads_data$osm_lines
+            
+          # Check if surface column exists
+            if (!"surface" %in% colnames(roads_sf)) {
+              roads_sf$surface <- NA
+            }
+            
+          # Define surface types
+            paved_surfaces <- c("paved", "asphalt", "concrete")
           
-          if (!is.null(healthcare_data$osm_points) && nrow(healthcare_data$osm_points) > 0) {
-            found_facilities <- healthcare_data$osm_points
+          # Filter for paved roads - only those with explicit surface tags
+            paved_roads <- roads_sf[roads_sf$surface %in% paved_surfaces, ]
+          
+          if (nrow(paved_roads) > 0) {
+            found_facilities <- paved_roads
           }
-        } else if (facility_type == "school") {
-          school_data <- osmdata::opq(search_bbox) %>%
-            osmdata::add_osm_feature(key = "amenity", value = "school") %>%
-            osmdata::osmdata_sf()
-        
+          # If no paved roads found, found_facilities remains NULL and search will continue
+              }
+            } else if (facility_type == "healthcare") {
+              healthcare_data <- osmdata::opq(search_bbox) %>%
+                osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
+                osmdata::osmdata_sf()
+              
+              if (!is.null(healthcare_data$osm_points) && nrow(healthcare_data$osm_points) > 0) {
+                found_facilities <- healthcare_data$osm_points
+              }
+            } else if (facility_type == "school") {
+              school_data <- osmdata::opq(search_bbox) %>%
+                osmdata::add_osm_feature(key = "amenity", value = "school") %>%
+                osmdata::osmdata_sf()
+              
         # Collect both points and polygons
           school_points <- NULL
           if (!is.null(school_data$osm_points) && nrow(school_data$osm_points) > 0) {
             school_points <- sf::st_geometry(school_data$osm_points) %>% 
               sf::st_sf(geometry = .)
           }
-          
+        
           if (!is.null(school_data$osm_polygons) && nrow(school_data$osm_polygons) > 0) {
             school_centroids <- sf::st_centroid(sf::st_geometry(school_data$osm_polygons)) %>%
               sf::st_sf(geometry = .)
@@ -174,9 +190,9 @@
               school_points <- rbind(school_points, school_centroids)
             }
           }
-          
-          found_facilities <- school_points
-        }
+        
+        found_facilities <- school_points
+      }
       
       # Increment search area
         if (is.null(found_facilities)) {
@@ -189,11 +205,11 @@
     # Calculate travel time if facilities found
       if (!is.null(found_facilities) && nrow(found_facilities) > 0) {
         if (!is.null(friction_raster)) {
-          # Check if we need to expand friction raster
+        # Check if we need to expand friction raster
           facilities_extent <- sf::st_bbox(found_facilities)
           friction_extent <- raster::extent(friction_raster)
           
-          # If facilities are outside friction raster extent, return NA
+        # If facilities are outside friction raster extent, return NA
           if (facilities_extent["xmin"] < friction_extent@xmin ||
               facilities_extent["xmax"] > friction_extent@xmax ||
               facilities_extent["ymin"] < friction_extent@ymin ||
@@ -201,7 +217,7 @@
             
             cat(sprintf("  Found %s outside friction raster extent. Returning NA.\n", facility_type))
             return(NA)
-          }
+        }
         
         # For roads, convert to points
           if (facility_type == "paved_road") {
@@ -219,7 +235,7 @@
         # If no friction raster provided, return NA
           cat("  No friction raster provided. Returning NA.\n")
           return(NA)
-        }
+      }
     }
     
     # If still no facilities found after maximum search
@@ -349,7 +365,7 @@
       center_lat <- as.numeric(community_data$lat)
       center_lon <- as.numeric(community_data$lon)
     
-    # Ratio of Paved to Unpaved Roads and Percent Paved Roads
+    # Ratio of Paved to Unpaved Roads, Percent Paved Roads, and Travel Time to Nearest Paved Road
       if (roads) {
         tryCatch({
           cat("  Analyzing roads...\n")
@@ -363,86 +379,89 @@
             
             if (!is.null(roads_data$osm_lines) && nrow(roads_data$osm_lines) > 0) {
               roads_sf <- roads_data$osm_lines
+            
+            # Check if surface column exists
+              if (!"surface" %in% colnames(roads_sf)) {
+                cat("  Surface data does not exist in the OSM data. Using highway types for classification.\n")
+                roads_sf$surface <- NA
+              }
               
-              # Check if surface column exists
-                if (!"surface" %in% colnames(roads_sf)) {
-                  cat("  Surface data does not exist in the OSM data. Using highway types for classification.\n")
-                  roads_sf$surface <- NA
-                }
-                
-              # Classify roads based on surface tag
-                roads_sf$road_type <- "other"
-                roads_sf$road_type[roads_sf$surface %in% paved_surfaces] <- "paved"
-                roads_sf$road_type[roads_sf$surface %in% unpaved_surfaces] <- "unpaved"
+            # Classify roads based on surface tag
+              roads_sf$road_type <- "other"
+              roads_sf$road_type[roads_sf$surface %in% paved_surfaces] <- "paved"
+              roads_sf$road_type[roads_sf$surface %in% unpaved_surfaces] <- "unpaved"
+            
+            # Classify roads based on highway tag for tracks and paths
+            # This helps when surface information is missing but highway type indicates unpaved
+              if ("highway" %in% colnames(roads_sf)) {
+                unpaved_highway_types <- c("track", "path")
+                roads_sf$road_type[roads_sf$highway %in% unpaved_highway_types] <- "unpaved"
+              }
+            
+            # Calculate road lengths
+              roads_sf <- sf::st_transform(roads_sf, crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84"))
+              roads_sf$length <- as.numeric(sf::st_length(roads_sf))
+            
+            # Summarize by road type
+              road_summary <- aggregate(as.numeric(roads_sf$length), by = list(road_type = roads_sf$road_type), FUN = sum)
+            
+            # Calculate paved road ratio
+              total_length <- sum(road_summary$x, na.rm = TRUE)
+              paved_length <- sum(road_summary$x[road_summary$road_type == "paved"], na.rm = TRUE)
+              unpaved_length <- sum(road_summary$x[road_summary$road_type == "unpaved"], na.rm = TRUE)
+            
+            # Calculate ratio
+              if (unpaved_length > 0) {
+                results$paved_to_unpaved_ratio <- as.numeric(paved_length / unpaved_length)
+              } else {
+                results$paved_to_unpaved_ratio <- Inf
+              }
               
-              # Classify roads based on highway tag for tracks and paths
-              # This helps when surface information is missing but highway type indicates unpaved
-                if ("highway" %in% colnames(roads_sf)) {
-                  unpaved_highway_types <- c("track", "path")
-                  roads_sf$road_type[roads_sf$highway %in% unpaved_highway_types] <- "unpaved"
-                }
-              
-              # Calculate road lengths
-                roads_sf <- sf::st_transform(roads_sf, crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84"))
-                roads_sf$length <- as.numeric(sf::st_length(roads_sf))
-              
-              # Summarize by road type
-                road_summary <- aggregate(as.numeric(roads_sf$length), by = list(road_type = roads_sf$road_type), FUN = sum)
-              
-              # Calculate paved road ratio
-                total_length <- sum(road_summary$x, na.rm = TRUE)
-                paved_length <- sum(road_summary$x[road_summary$road_type == "paved"], na.rm = TRUE)
-                unpaved_length <- sum(road_summary$x[road_summary$road_type == "unpaved"], na.rm = TRUE)
-              
-              # Calculate ratio
-                if (unpaved_length > 0) {
-                  results$paved_to_unpaved_ratio <- as.numeric(paved_length / unpaved_length)
-                } else {
-                  results$paved_to_unpaved_ratio <- Inf
-                }
-                
-                results$pct_paved_roads <- 100 * as.numeric(paved_length / total_length)
+              results$pct_paved_roads <- 100 * as.numeric(paved_length / total_length)
             
             # Calculate travel time to nearest paved road
               paved_roads <- roads_sf[roads_sf$road_type == "paved", ]
-                
-                if (nrow(paved_roads) > 0 && !is.null(friction_raster)) {
-                  # Convert lines to points for travel time calculation
+              
+              if (nrow(paved_roads) > 0 && !is.null(friction_raster)) {
+              # Convert lines to points for travel time calculation
                   suppressWarnings({
                     paved_points <- sf::st_cast(sf::st_geometry(paved_roads), "POINT") %>%
                       sf::st_sf(geometry = .)
                   })
                   results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points, friction_raster)
                 } else {
-                  # Use progressive search for paved roads
-                  results$travel_time_paved_road_min <- search_facilities_progressive(
-                    center_point = center_point,
-                    bbox = bbox,
-                    facility_type = "paved_road",
-                    friction_raster = friction_raster,
-                    max_search_multiplier = 50
-                  )
-                }
-            } else {  # This else handles when no roads are found in the initial area
+              # No paved roads locally, use progressive search
+                results$travel_time_paved_road_min <- search_facilities_progressive(
+                  center_point = center_point,
+                  bbox = bbox,
+                  facility_type = "paved_road",
+                  friction_raster = friction_raster,
+                  max_search_multiplier = 10
+              )
+            }
+            
+          } else {
+            # No roads found in the initial area at all
+              cat("  No roads found in the immediate area.\n")
               results$paved_to_unpaved_ratio <- NA
               results$pct_paved_roads <- NA
-              # Still try progressive search for paved roads
+              
+            # Still try progressive search for paved roads in wider area
               results$travel_time_paved_road_min <- search_facilities_progressive(
                 center_point = center_point,
                 bbox = bbox,
                 facility_type = "paved_road",
                 friction_raster = friction_raster,
-                max_search_multiplier = 50
+                max_search_multiplier = 10
               )
-              cat("  No roads found in the area.\n")
             }
-        }, error = function(e) {
-          cat("  Error processing roads:", e$message, "\n")
-          results$paved_to_unpaved_ratio <- NA
-          results$pct_paved_roads <- NA
-          results$travel_time_paved_road_min <- NA
-        })
-      } 
+          }, error = function(e) {
+            cat("  Error processing roads:", e$message, "\n")
+            results$paved_to_unpaved_ratio <- NA
+            results$pct_paved_roads <- NA
+            results$travel_time_paved_road_min <- NA
+          })
+      }
                
     
     # Number of Formal Shops
