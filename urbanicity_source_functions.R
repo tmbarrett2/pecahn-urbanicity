@@ -73,6 +73,25 @@
     return(result)
   }
   
+# Compute nighttime light metric for use within the broader compute_urbanicity() 
+# and compute_urabicity_iterative() functions
+  
+# loading nighttime light data image from NASA (VIIRS)
+  ## Earth at Night (Black Marble) 2016 Color Maps
+  ## maximum value is 193565 (nW/cm²/sr)
+  ## higher value = more bright
+  ## using 0.1 degrees (3600x1800) resolution
+  ## Learn more here: https://www.visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps/144944l
+
+  viirs_url <- "https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_01deg_geo.tif"
+  viirs_raster <- raster(viirs_url)
+  
+  get_light_mean <- function(polygon_sf, raster_data) {
+      polygon_sp <- as(polygon_sf, "Spatial")
+      light_mean <- extract(raster_data, polygon_sp, fun = mean, na.rm = TRUE)
+      return(round(light_mean, 3))
+    }
+  
 # Helper Function to Calculate Travel Time Using Friction Surface
   calculate_travel_time <- function(from_point, to_points, friction_raster, max_search_km = 50) {
     if (is.null(to_points) || nrow(to_points) == 0) {
@@ -113,6 +132,7 @@
                                  schools = TRUE,
                                  cell_towers = TRUE,
                                  buildings = TRUE,
+                                 nighttime_light = TRUE) {
                                  population = TRUE,
                                  friction_surface = "walking",
                                  friction_surface_path = NULL,
@@ -124,6 +144,14 @@
           stop(paste("Package", pkg, "needed for this function to work."))
         }
       }
+    
+    if (!requireNamespace("terra", quietly = TRUE)) {
+      stop("Package 'terra' needed for this function to work.")
+    }
+    
+    if (!requireNamespace("raster", quietly = TRUE)) {
+      stop("Package 'raster' needed for this function to work.")
+    }
     
     # Import functions
       library(osmdata)
@@ -587,6 +615,24 @@
             results$building_density_pct <- NA
           })
       }
+      
+      # Nighttime Light (from VIIRS)
+      if (nighttime_light) {
+        tryCatch({
+          cat("  Analyzing nighttime light...\n")
+          poly_for_nighttime_light <-  poly |> 
+            st_sf()
+          poly_for_nighttime_light$dummy <- 1 # adding dummy column so that code works
+          
+          nighttime_light <- get_light_mean(poly_for_nighttime_light,viirs_raster)[1]
+          
+          results$nighttime_light <- as.numeric(nighttime_light)
+          
+        }, error = function(e) {
+          cat("  Error processing nighttime light:", e$message, "\n")
+          results$nighttime_light <- NA
+        })
+      }
     
     # Population Density from SEDAC/NASA Gridded Population of the World
       if (population) {
@@ -686,6 +732,7 @@
       do_schools <- "all" %in% metrics || "schools" %in% metrics
       do_cell_towers <- "all" %in% metrics || "cell_towers" %in% metrics
       do_buildings <- "all" %in% metrics || "buildings" %in% metrics
+      do_nighttime_light <- "all" %in% metrics || "nighttime_light" %in% metrics
       do_population <- "all" %in% metrics || "population" %in% metrics
     
     # Initialize an empty list to store results
@@ -697,21 +744,22 @@
         community_data <- communities_list[[i]]
         
         # Process the community with selected metrics
-        result <- compute_urbanicity(
-          community_data, 
-          name = community_name,
-          roads = do_roads,
-          shops = do_shops,
-          healthcare = do_healthcare,
-          transport = do_transport,
-          financial = do_financial,
-          schools = do_schools,
-          cell_towers = do_cell_towers,
-          buildings = do_buildings,
-          population = do_population,
-          friction_surface = friction_surface,
-          friction_surface_path = friction_surface_path,
-          population_raster_path = population_raster_path
+          result <- compute_urbanicity(
+            community_data, 
+            name = community_name,
+            roads = do_roads,
+            shops = do_shops,
+            healthcare = do_healthcare,
+            transport = do_transport,
+            financial = do_financial,
+            schools = do_schools,
+            cell_towers = do_cell_towers,
+            buildings = do_buildings,
+            nighttime_light = do_nighttime_light
+            population = do_population,
+            friction_surface = friction_surface,
+            friction_surface_path = friction_surface_path,
+            population_raster_path = population_raster_path
         )
       
       # Add to results list
