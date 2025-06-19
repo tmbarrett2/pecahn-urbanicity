@@ -73,19 +73,7 @@
     return(result)
   }
   
-# Compute nighttime light metric for use within the broader compute_urbanicity() 
-# and compute_urabicity_iterative() functions
-  
-# loading nighttime light data image from NASA (VIIRS)
-  ## Earth at Night (Black Marble) 2016 Color Maps
-  ## maximum value is 193565 (nW/cm²/sr)
-  ## higher value = more bright
-  ## using 0.1 degrees (3600x1800) resolution
-  ## Learn more here: https://www.visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps/144944l
-
-  viirs_url <- "https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_01deg_geo.tif"
-  viirs_raster <- raster(viirs_url)
-  
+# Helper Function to Compute Mean Nighttime Light Value
   get_light_mean <- function(polygon_sf, raster_data) {
       polygon_sp <- as(polygon_sf, "Spatial")
       light_mean <- extract(raster_data, polygon_sp, fun = mean, na.rm = TRUE)
@@ -132,11 +120,11 @@
                                  schools = TRUE,
                                  cell_towers = TRUE,
                                  buildings = TRUE,
-                                 nighttime_light = TRUE) {
+                                 nighttime_light = TRUE,
                                  population = TRUE,
-                                 friction_surface = "walking",
                                  friction_surface_path = NULL,
-                                 population_raster_path = NULL) {
+                                 population_raster_path = NULL,
+                                 nighttime_light_path = NULL) {
     # Load required libraries
       required_packages <- c("osmdata", "sf", "raster", "gdistance", "httr", "terra")
       for (pkg in required_packages) {
@@ -617,22 +605,25 @@
       }
       
       # Nighttime Light (from VIIRS)
-      if (nighttime_light) {
-        tryCatch({
-          cat("  Analyzing nighttime light...\n")
-          poly_for_nighttime_light <-  poly |> 
-            st_sf()
-          poly_for_nighttime_light$dummy <- 1 # adding dummy column so that code works
-          
-          nighttime_light <- get_light_mean(poly_for_nighttime_light,viirs_raster)[1]
-          
-          results$nighttime_light <- as.numeric(nighttime_light)
-          
-        }, error = function(e) {
-          cat("  Error processing nighttime light:", e$message, "\n")
-          results$nighttime_light <- NA
-        })
-      }
+        if (nighttime_light) {
+          tryCatch({
+            cat("  Analyzing nighttime light...\n")
+            
+            viirs_raster <- raster(nighttime_light_path)
+            
+            poly_for_nighttime_light <-  poly |> 
+              st_sf() |>
+              mutate(id = row_number())
+            
+            nighttime_light <- get_light_mean(poly_for_nighttime_light,viirs_raster)[1]
+            
+            results$nighttime_light <- as.numeric(nighttime_light)
+            
+          }, error = function(e) {
+            cat("  Error processing nighttime light:", e$message, "\n")
+            results$nighttime_light <- NA
+          })
+        }
     
     # Population Density from SEDAC/NASA Gridded Population of the World
       if (population) {
@@ -719,9 +710,9 @@
 # metrics is a vector of the measures you want to compute.
   compute_urbanicity_iterative <- function(communities_list, 
                                            metrics = c("all"),
-                                           friction_surface = "walking",
                                            friction_surface_path = NULL,
-                                           population_raster_path = NULL) {
+                                           population_raster_path = NULL,
+                                           nighttime_light_path = NULL) {
     
     # Set up which metrics to analyze based on user input
       do_roads <- "all" %in% metrics || "roads" %in% metrics
@@ -755,11 +746,11 @@
             schools = do_schools,
             cell_towers = do_cell_towers,
             buildings = do_buildings,
-            nighttime_light = do_nighttime_light
+            nighttime_light = do_nighttime_light,
             population = do_population,
-            friction_surface = friction_surface,
             friction_surface_path = friction_surface_path,
-            population_raster_path = population_raster_path
+            population_raster_path = population_raster_path,
+            nighttime_light_path = nighttime_light_path
         )
       
       # Add to results list
