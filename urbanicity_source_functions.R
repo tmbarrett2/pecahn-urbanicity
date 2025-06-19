@@ -73,7 +73,7 @@
     return(result)
   }
   
-# Helper function to calculate travel time using friction surface
+# Helper Function to Calculate Travel Time Using Friction Surface
   calculate_travel_time <- function(from_point, to_points, friction_raster, max_search_km = 50) {
     if (is.null(to_points) || nrow(to_points) == 0) {
       return(NA)
@@ -103,7 +103,7 @@
       return(ifelse(is.finite(min_time), min_time, NA))
   }
   
-# Compute Urbanicity Metric For Single community
+# Compute Urbanicity Metric for Single Community
   compute_urbanicity <- function(community_data, name = NULL,
                                  roads = TRUE,
                                  shops = TRUE,
@@ -113,8 +113,10 @@
                                  schools = TRUE,
                                  cell_towers = TRUE,
                                  buildings = TRUE,
+                                 population = TRUE,
                                  friction_surface = "walking",
-                                 friction_surface_path = NULL) {
+                                 friction_surface_path = NULL,
+                                 population_raster_path = NULL) {
     # Load required libraries
       required_packages <- c("osmdata", "sf", "raster", "gdistance", "httr", "terra")
       for (pkg in required_packages) {
@@ -171,18 +173,23 @@
     # Create center point sf object
       center_point <- sf::st_sfc(sf::st_point(c(center_lon, center_lat)), crs = 4326)
       
-    # Load friction surface (with local file support)
+    # Load friction surface (local files only)
       friction_raster <- NULL
       if (healthcare || schools || roads) {
         tryCatch({
           cat("  Loading friction surface data...\n")
           
           # Check if a local friction surface path is provided
-          if (!is.null(friction_surface_path) && file.exists(friction_surface_path)) {
+            if (is.null(friction_surface_path) || !file.exists(friction_surface_path)) {
+              stop("Error: Local friction surface file is required but not provided or does not exist.\n",
+                   "Please provide a valid path to a local friction surface file using the 'friction_surface_path' parameter.\n",
+                   "Expected file format: GeoTIFF (.tif or .tiff)")
+            }
+          
             cat("  Using local friction surface file:", friction_surface_path, "\n")
             friction_global <- raster::raster(friction_surface_path)
-            
-            # Crop to a larger area around the community (for searching)
+          
+          # Crop to a larger area around the community (for searching)
             search_buffer <- 0.5  # degrees (~50km)
             extent_buffered <- raster::extent(
               bbox["left"] - search_buffer,
@@ -194,48 +201,15 @@
             friction_raster <- raster::crop(friction_global, extent_buffered)
             cat("  Friction surface loaded successfully\n")
             
-          } else {
-            # Fallback to download approach (keeping for backwards compatibility)
-            cat("  No local friction surface provided, attempting download...\n")
-            
-            # Define URLs for MAP friction surfaces
-            friction_urls <- list(
-              walking = "https://malariaatlas.org/geoserver/Accessibility/ows?service=WCS&version=2.0.1&request=GetCoverage&format=image/geotiff&coverageid=Accessibility:202001_Global_Walking_Only_Travel_Time_To_Healthcare",
-              motorized = "https://malariaatlas.org/geoserver/Accessibility/ows?service=WCS&version=2.0.1&request=GetCoverage&format=image/geotiff&coverageid=Accessibility:202001_Global_Motorized_Travel_Time_To_Healthcare"
-            )
-            
-            # Create cache directory
-            cache_dir <- file.path(tempdir(), "friction_cache")
-            dir.create(cache_dir, showWarnings = FALSE)
-            cache_file <- file.path(cache_dir, paste0("friction_", friction_surface, ".tif"))
-            
-            # Download or load from cache
-            if (!file.exists(cache_file)) {
-              cat("  Downloading friction surface (this may take a while on first run)...\n")
-              download.file(friction_urls[[friction_surface]], cache_file, mode = "wb", quiet = TRUE)
-            }
-            
-            # Load the global friction raster
-            friction_global <- raster::raster(cache_file)
-            
-            # Crop to study area
-            search_buffer <- 0.5
-            extent_buffered <- raster::extent(
-              bbox["left"] - search_buffer,
-              bbox["right"] + search_buffer,
-              bbox["bottom"] - search_buffer,
-              bbox["top"] + search_buffer
-            )
-            
-            friction_raster <- raster::crop(friction_global, extent_buffered)
-          }
-          
-        }, error = function(e) {
-          cat("  Error loading friction surface. Using fallback straight-line distance method.\n")
-          cat("  Error details:", e$message, "\n")
-          friction_raster <- NULL
-        })
-      }
+          }, error = function(e) {
+            cat("  Error loading friction surface:", e$message, "\n")
+            cat("  Please ensure:\n")
+            cat("    1. The friction_surface_path parameter points to a valid GeoTIFF file\n")
+            cat("    2. The file exists and is readable\n")
+            cat("    3. The file contains valid raster data\n")
+            friction_raster <- NULL
+          })
+        }
       
     # Create center point sf object
       center_point <- sf::st_sfc(sf::st_point(c(center_lon, center_lat)), crs = 4326)
@@ -251,114 +225,114 @@
             osmdata::osmdata_sf()
           
           # Define surface types
-          paved_surfaces <- c("paved", "asphalt", "concrete")
-          unpaved_surfaces <- c("unpaved", "dirt", "gravel", "fine_gravel", "sand", "grass", "ground", "earth", "mud", "compacted", "unclassified")
-          
-          if (!is.null(roads_data$osm_lines) && nrow(roads_data$osm_lines) > 0) {
-            roads_sf <- roads_data$osm_lines
+            paved_surfaces <- c("paved", "asphalt", "concrete")
+            unpaved_surfaces <- c("unpaved", "dirt", "gravel", "fine_gravel", "sand", "grass", "ground", "earth", "mud", "compacted", "unclassified")
             
-            # Check if surface column exists
-            if (!"surface" %in% colnames(roads_sf)) {
-              cat("  Surface data does not exist in the OSM data. Using highway types for classification.\n")
-              roads_sf$surface <- NA
-            }
-            
-            # Classify roads based on surface tag
-            roads_sf$road_type <- "other"
-            roads_sf$road_type[roads_sf$surface %in% paved_surfaces] <- "paved"
-            roads_sf$road_type[roads_sf$surface %in% unpaved_surfaces] <- "unpaved"
-            
-            # Classify roads based on highway tag for tracks and paths
-            # This helps when surface information is missing but highway type indicates unpaved
-            if ("highway" %in% colnames(roads_sf)) {
-              unpaved_highway_types <- c("track", "path")
-              roads_sf$road_type[roads_sf$highway %in% unpaved_highway_types] <- "unpaved"
-            }
-            
-            # Calculate road lengths
-            roads_sf <- sf::st_transform(roads_sf, crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84"))
-            roads_sf$length <- as.numeric(sf::st_length(roads_sf))
-            
-            # Summarize by road type
-            road_summary <- aggregate(as.numeric(roads_sf$length), by = list(road_type = roads_sf$road_type), FUN = sum)
-            
-            # Calculate paved road ratio
-            total_length <- sum(road_summary$x, na.rm = TRUE)
-            paved_length <- sum(road_summary$x[road_summary$road_type == "paved"], na.rm = TRUE)
-            unpaved_length <- sum(road_summary$x[road_summary$road_type == "unpaved"], na.rm = TRUE)
-            
-            # Calculate ratio
-            if (unpaved_length > 0) {
-              results$paved_to_unpaved_ratio <- as.numeric(paved_length / unpaved_length)
-            } else {
-              results$paved_to_unpaved_ratio <- Inf
-            }
-            
-            results$pct_paved_roads <- 100 * as.numeric(paved_length / total_length)
+            if (!is.null(roads_data$osm_lines) && nrow(roads_data$osm_lines) > 0) {
+              roads_sf <- roads_data$osm_lines
+              
+              # Check if surface column exists
+                if (!"surface" %in% colnames(roads_sf)) {
+                  cat("  Surface data does not exist in the OSM data. Using highway types for classification.\n")
+                  roads_sf$surface <- NA
+                }
+                
+              # Classify roads based on surface tag
+                roads_sf$road_type <- "other"
+                roads_sf$road_type[roads_sf$surface %in% paved_surfaces] <- "paved"
+                roads_sf$road_type[roads_sf$surface %in% unpaved_surfaces] <- "unpaved"
+              
+              # Classify roads based on highway tag for tracks and paths
+              # This helps when surface information is missing but highway type indicates unpaved
+                if ("highway" %in% colnames(roads_sf)) {
+                  unpaved_highway_types <- c("track", "path")
+                  roads_sf$road_type[roads_sf$highway %in% unpaved_highway_types] <- "unpaved"
+                }
+              
+              # Calculate road lengths
+                roads_sf <- sf::st_transform(roads_sf, crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84"))
+                roads_sf$length <- as.numeric(sf::st_length(roads_sf))
+              
+              # Summarize by road type
+                road_summary <- aggregate(as.numeric(roads_sf$length), by = list(road_type = roads_sf$road_type), FUN = sum)
+              
+              # Calculate paved road ratio
+                total_length <- sum(road_summary$x, na.rm = TRUE)
+                paved_length <- sum(road_summary$x[road_summary$road_type == "paved"], na.rm = TRUE)
+                unpaved_length <- sum(road_summary$x[road_summary$road_type == "unpaved"], na.rm = TRUE)
+              
+              # Calculate ratio
+                if (unpaved_length > 0) {
+                  results$paved_to_unpaved_ratio <- as.numeric(paved_length / unpaved_length)
+                } else {
+                  results$paved_to_unpaved_ratio <- Inf
+                }
+                
+                results$pct_paved_roads <- 100 * as.numeric(paved_length / total_length)
             
             # Calculate travel time to nearest paved road
-            paved_roads <- roads_sf[roads_sf$road_type == "paved", ]
-            
-            if (nrow(paved_roads) > 0) {
-              if (!is.null(friction_raster)) {
-                # Convert lines to points for travel time calculation
-                suppressWarnings({
-                  paved_points <- sf::st_cast(paved_roads, "POINT")
-                })
-                results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points, friction_raster)
-              } else {
-                # Fallback: straight-line distance
-                distances <- sf::st_distance(center_point, paved_roads)
-                min_dist_m <- min(distances, na.rm = TRUE)
-                # Assume walking speed of 5 km/h
-                results$travel_time_paved_road_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-              }
-            } else {
-              # Search in larger area
-              cat("  No paved roads in immediate area, searching wider region...\n")
-              search_multiplier <- 2
-              extended_bbox <- c(
-                bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
-                bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
-                bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
-                bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
-              )
+              paved_roads <- roads_sf[roads_sf$road_type == "paved", ]
               
-              roads_extended <- osmdata::opq(extended_bbox) %>%
-                osmdata::add_osm_feature(key = "highway") %>%
-                osmdata::add_osm_feature(key = "surface", value = paved_surfaces) %>%
-                osmdata::osmdata_sf()
-              
-              if (!is.null(roads_extended$osm_lines) && nrow(roads_extended$osm_lines) > 0) {
+              if (nrow(paved_roads) > 0) {
                 if (!is.null(friction_raster)) {
-                  suppressWarnings({
-                    paved_points_ext <- sf::st_cast(roads_extended$osm_lines, "POINT")
-                  })
-                  paved_points_ext <- sf::st_cast(roads_extended$osm_lines, "POINT")
-                  results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points_ext, friction_raster)
-                } else {
-                  distances <- sf::st_distance(center_point, roads_extended$osm_lines)
-                  min_dist_m <- min(distances, na.rm = TRUE)
-                  results$travel_time_paved_road_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
+                  # Convert lines to points for travel time calculation
+                    suppressWarnings({
+                      paved_points <- sf::st_cast(paved_roads, "POINT")
+                    })
+                    results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points, friction_raster)
+                  } else {
+                  # Fallback: straight-line distance if no friction raster provided
+                    distances <- sf::st_distance(center_point, paved_roads)
+                    min_dist_m <- min(distances, na.rm = TRUE)
+                  # Assume walking speed of 5 km/h
+                    results$travel_time_paved_road_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
                 }
               } else {
+                # Search in larger area
+                  cat("  No paved roads in immediate area, searching wider region...\n")
+                  search_multiplier <- 2
+                  extended_bbox <- c(
+                    bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
+                    bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
+                    bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
+                    bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
+                  )
+                
+                  roads_extended <- osmdata::opq(extended_bbox) %>%
+                    osmdata::add_osm_feature(key = "highway") %>%
+                    osmdata::add_osm_feature(key = "surface", value = paved_surfaces) %>%
+                    osmdata::osmdata_sf()
+                
+                  if (!is.null(roads_extended$osm_lines) && nrow(roads_extended$osm_lines) > 0) {
+                    if (!is.null(friction_raster)) {
+                      suppressWarnings({
+                        paved_points_ext <- sf::st_cast(roads_extended$osm_lines, "POINT")
+                      })
+                      paved_points_ext <- sf::st_cast(roads_extended$osm_lines, "POINT")
+                      results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points_ext, friction_raster)
+                    } else {
+                      distances <- sf::st_distance(center_point, roads_extended$osm_lines)
+                      min_dist_m <- min(distances, na.rm = TRUE)
+                      results$travel_time_paved_road_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
+                    }
+                  } else {
+                    results$travel_time_paved_road_min <- NA
+                  }
+                }
+                
+              } else {
+                results$paved_to_unpaved_ratio <- NA
+                results$pct_paved_roads <- NA
                 results$travel_time_paved_road_min <- NA
+                cat("  No roads found in the area.\n")
               }
-            }
-            
-          } else {
-            results$paved_to_unpaved_ratio <- NA
-            results$pct_paved_roads <- NA
-            results$travel_time_paved_road_min <- NA
-            cat("  No roads found in the area.\n")
-          }
-        }, error = function(e) {  # FIXED: Added comma before 'error'
-          cat("  Error processing roads:", e$message, "\n")
-          results$paved_to_unpaved_ratio <- NA
-          results$pct_paved_roads <- NA
-          results$travel_time_paved_road_min <- NA
-        })  # ADDED: Closing parenthesis for tryCatch
-      }  # ADDED: Closing brace for if (roads)
+            }, error = function(e) {
+              cat("  Error processing roads:", e$message, "\n")
+              results$paved_to_unpaved_ratio <- NA
+              results$pct_paved_roads <- NA
+              results$travel_time_paved_road_min <- NA
+            })
+          }  
                
     
     # Number of Formal Shops
@@ -383,63 +357,61 @@
          })
       }
     
-    # Number of Healthcare Facilities and Distance to Nearest Healthcare Facility
-    # NOTE: jUST yes / no for now, was getting oddly large values for some communities
-            # Travel time to nearest Healthcare Facility
-            if (healthcare) {
-              tryCatch({
-                cat("  Analyzing healthcare facilities...\n")
-                healthcare_data <- osmdata::opq(osm_bbox) %>%
-                  osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
-                  osmdata::osmdata_sf()
-                
-                healthcare_points <- NULL
-                if (!is.null(healthcare_data$osm_points) && nrow(healthcare_data$osm_points) > 0) {
-                  healthcare_points <- healthcare_data$osm_points
-                }
-                
-                if (!is.null(healthcare_points) && nrow(healthcare_points) > 0) {
-                  if (!is.null(friction_raster)) {
-                    results$travel_time_healthcare_min <- calculate_travel_time(center_point, healthcare_points, friction_raster)
-                  } else {
-                    # Fallback: straight-line distance
-                    distances <- sf::st_distance(center_point, healthcare_points)
-                    min_dist_m <- min(distances, na.rm = TRUE)
-                    results$travel_time_healthcare_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-                  }
-                } else {
-                  # Search in larger area
-                  cat("  No healthcare facilities in immediate area, searching wider region...\n")
-                  search_multiplier <- 2
-                  extended_bbox <- c(
-                    bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
-                    bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
-                    bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
-                    bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
-                  )
-                  
-                  healthcare_extended <- osmdata::opq(extended_bbox) %>%
-                    osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
-                    osmdata::osmdata_sf()
-                  
-                  if (!is.null(healthcare_extended$osm_points) && nrow(healthcare_extended$osm_points) > 0) {
-                    if (!is.null(friction_raster)) {
-                      results$travel_time_healthcare_min <- calculate_travel_time(center_point, healthcare_extended$osm_points, friction_raster)
-                    } else {
-                      distances <- sf::st_distance(center_point, healthcare_extended$osm_points)
-                      min_dist_m <- min(distances, na.rm = TRUE)
-                      results$travel_time_healthcare_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
-                    }
-                  } else {
-                    results$travel_time_healthcare_min <- NA
-                  }
-                }
-                
-              }, error = function(e) {
-                cat("  Error processing healthcare facilities:", e$message, "\n")
-                results$travel_time_healthcare_min <- NA
-              })
+    # Travel time to nearest Healthcare Facility
+      if (healthcare) {
+        tryCatch({
+          cat("  Analyzing healthcare facilities...\n")
+          healthcare_data <- osmdata::opq(osm_bbox) %>%
+            osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
+            osmdata::osmdata_sf()
+          
+          healthcare_points <- NULL
+          if (!is.null(healthcare_data$osm_points) && nrow(healthcare_data$osm_points) > 0) {
+            healthcare_points <- healthcare_data$osm_points
+          }
+          
+          if (!is.null(healthcare_points) && nrow(healthcare_points) > 0) {
+            if (!is.null(friction_raster)) {
+              results$travel_time_healthcare_min <- calculate_travel_time(center_point, healthcare_points, friction_raster)
+            } else {
+              # Fallback: straight-line distance if no friction raster provided
+                distances <- sf::st_distance(center_point, healthcare_points)
+                min_dist_m <- min(distances, na.rm = TRUE)
+                results$travel_time_healthcare_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
             }
+          } else {
+            # Search in larger area
+              cat("  No healthcare facilities in immediate area, searching wider region...\n")
+              search_multiplier <- 2
+              extended_bbox <- c(
+                bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
+                bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
+                bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
+                bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
+              )
+            
+              healthcare_extended <- osmdata::opq(extended_bbox) %>%
+                osmdata::add_osm_feature(key = "amenity", value = c("hospital", "clinic", "doctors")) %>%
+                osmdata::osmdata_sf()
+            
+            if (!is.null(healthcare_extended$osm_points) && nrow(healthcare_extended$osm_points) > 0) {
+              if (!is.null(friction_raster)) {
+                results$travel_time_healthcare_min <- calculate_travel_time(center_point, healthcare_extended$osm_points, friction_raster)
+              } else {
+                distances <- sf::st_distance(center_point, healthcare_extended$osm_points)
+                min_dist_m <- min(distances, na.rm = TRUE)
+                results$travel_time_healthcare_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
+              }
+            } else {
+              results$travel_time_healthcare_min <- NA
+            }
+          }
+          
+        }, error = function(e) {
+          cat("  Error processing healthcare facilities:", e$message, "\n")
+          results$travel_time_healthcare_min <- NA
+        })
+      }
     
     # Number of Financial Services
       if (financial) {
@@ -460,8 +432,7 @@
         })
       }
     
-    # Number of Schools -- NOTE: jUST yes / no for now, was getting oddly large values for some communities
-      # Travel time to nearest School
+    # Travel time to nearest School
       if (schools) {
         tryCatch({
           cat("  Analyzing schools...\n")
@@ -473,89 +444,89 @@
           school_points <- NULL
           
           # Collect points
-          if (!is.null(school_data$osm_points) && nrow(school_data$osm_points) > 0) {
+            if (!is.null(school_data$osm_points) && nrow(school_data$osm_points) > 0) {
             # Keep only geometry for consistency
-            school_points <- sf::st_geometry(school_data$osm_points) %>% 
-              sf::st_sf(geometry = .)
+              school_points <- sf::st_geometry(school_data$osm_points) %>% 
+                sf::st_sf(geometry = .)
           }
           
           # Collect polygon centroids
-          if (!is.null(school_data$osm_polygons) && nrow(school_data$osm_polygons) > 0) {
-            school_centroids <- sf::st_centroid(school_data$osm_polygons) %>%
-              sf::st_geometry() %>%
-              sf::st_sf(geometry = .)
-            
-            if (is.null(school_points)) {
-              school_points <- school_centroids
-            } else {
-              # Combine geometries only
-              school_points <- rbind(school_points, school_centroids)
+            if (!is.null(school_data$osm_polygons) && nrow(school_data$osm_polygons) > 0) {
+              school_centroids <- sf::st_centroid(school_data$osm_polygons) %>%
+                sf::st_geometry() %>%
+                sf::st_sf(geometry = .)
+              
+              if (is.null(school_points)) {
+                school_points <- school_centroids
+              } else {
+                # Combine geometries only
+                  school_points <- rbind(school_points, school_centroids)
+              }
             }
-          }
           
           if (!is.null(school_points) && nrow(school_points) > 0) {
             if (!is.null(friction_raster)) {
               results$travel_time_school_min <- calculate_travel_time(center_point, school_points, friction_raster)
             } else {
-              # Fallback: straight-line distance
-              distances <- sf::st_distance(center_point, school_points)
-              min_dist_m <- min(distances, na.rm = TRUE)
-              results$travel_time_school_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
+              # Fallback: straight-line distance if no friction raster provided
+                distances <- sf::st_distance(center_point, school_points)
+                min_dist_m <- min(distances, na.rm = TRUE)
+                results$travel_time_school_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
             }
           } else {
             # Search in larger area
-            cat("  No schools in immediate area, searching wider region...\n")
-            search_multiplier <- 2
-            extended_bbox <- c(
-              bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
-              bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
-              bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
-              bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
-            )
+              cat("  No schools in immediate area, searching wider region...\n")
+              search_multiplier <- 2
+              extended_bbox <- c(
+                bbox["left"] - (bbox["right"] - bbox["left"]) * search_multiplier,
+                bbox["bottom"] - (bbox["top"] - bbox["bottom"]) * search_multiplier,
+                bbox["right"] + (bbox["right"] - bbox["left"]) * search_multiplier,
+                bbox["top"] + (bbox["top"] - bbox["bottom"]) * search_multiplier
+              )
             
-            school_extended <- osmdata::opq(extended_bbox) %>%
-              osmdata::add_osm_feature(key = "amenity", value = "school") %>%
-              osmdata::osmdata_sf()
-            
-            extended_points <- NULL
+              school_extended <- osmdata::opq(extended_bbox) %>%
+                osmdata::add_osm_feature(key = "amenity", value = "school") %>%
+                osmdata::osmdata_sf()
+              
+              extended_points <- NULL
             
             # Collect extended points
-            if (!is.null(school_extended$osm_points) && nrow(school_extended$osm_points) > 0) {
-              extended_points <- sf::st_geometry(school_extended$osm_points) %>%
-                sf::st_sf(geometry = .)
-            }
+              if (!is.null(school_extended$osm_points) && nrow(school_extended$osm_points) > 0) {
+                extended_points <- sf::st_geometry(school_extended$osm_points) %>%
+                  sf::st_sf(geometry = .)
+              }
             
             # Collect extended polygon centroids
-            if (!is.null(school_extended$osm_polygons) && nrow(school_extended$osm_polygons) > 0) {
-              extended_centroids <- sf::st_centroid(school_extended$osm_polygons) %>%
-                sf::st_geometry() %>%
-                sf::st_sf(geometry = .)
-              
-              if (is.null(extended_points)) {
-                extended_points <- extended_centroids
-              } else {
-                extended_points <- rbind(extended_points, extended_centroids)
+              if (!is.null(school_extended$osm_polygons) && nrow(school_extended$osm_polygons) > 0) {
+                extended_centroids <- sf::st_centroid(school_extended$osm_polygons) %>%
+                  sf::st_geometry() %>%
+                  sf::st_sf(geometry = .)
+                
+                if (is.null(extended_points)) {
+                  extended_points <- extended_centroids
+                } else {
+                  extended_points <- rbind(extended_points, extended_centroids)
+                }
               }
-            }
             
-            if (!is.null(extended_points) && nrow(extended_points) > 0) {
-              if (!is.null(friction_raster)) {
-                results$travel_time_school_min <- calculate_travel_time(center_point, extended_points, friction_raster)
+              if (!is.null(extended_points) && nrow(extended_points) > 0) {
+                if (!is.null(friction_raster)) {
+                  results$travel_time_school_min <- calculate_travel_time(center_point, extended_points, friction_raster)
+                } else {
+                  distances <- sf::st_distance(center_point, extended_points)
+                  min_dist_m <- min(distances, na.rm = TRUE)
+                  results$travel_time_school_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
+                }
               } else {
-                distances <- sf::st_distance(center_point, extended_points)
-                min_dist_m <- min(distances, na.rm = TRUE)
-                results$travel_time_school_min <- as.numeric(min_dist_m) / 1000 / 5 * 60
+                results$travel_time_school_min <- NA
               }
-            } else {
-              results$travel_time_school_min <- NA
             }
-          }
           
-        }, error = function(e) {
-          cat("  Error processing schools:", e$message, "\n")
-          results$travel_time_school_min <- NA
-        })
-      }
+          }, error = function(e) {
+            cat("  Error processing schools:", e$message, "\n")
+            results$travel_time_school_min <- NA
+          })
+        }
     
     # Number of Cell Towers
       if (cell_towers) {
@@ -617,7 +588,81 @@
           })
       }
     
-    cat("Processing complete for:", name, "\n\n")
+    # Population Density from SEDAC/NASA Gridded Population of the World
+      if (population) {
+        tryCatch({
+          cat("  Calculating population density...\n")
+          
+          # Check if a local population raster path is provided
+            if (!is.null(population_raster_path) && file.exists(population_raster_path)) {
+              cat("  Using local population raster file:", population_raster_path, "\n")
+            
+            # Load the population raster
+              population_global <- raster::raster(population_raster_path)
+            
+            # Crop to community area
+              extent_community <- raster::extent(
+                bbox["left"],
+                bbox["right"],
+                bbox["bottom"],
+                bbox["top"]
+              )
+              
+              population_raster <- raster::crop(population_global, extent_community)
+              cat("  Population raster loaded and cropped successfully\n")
+            
+            # Calculate population density
+            # First, project the polygon to equal area projection for accurate area calculation
+              poly_projected <- sf::st_transform(
+                poly, 
+                crs = sf::st_crs("+proj=aea +lat_1=20 +lat_2=-23 +lat_0=0 +lon_0=25 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+              )
+            
+            # Convert sfc to sf object for extract function
+              poly_projected_sf <- sf::st_sf(geometry = poly_projected)
+              
+            # Calculate area in square kilometers
+              area_m2 <- as.numeric(sf::st_area(poly_projected))
+              area_km2 <- area_m2 / 1000000
+            
+            # Extract population values within the community boundary
+            # Reproject raster to match the projected polygon
+              population_raster_proj <- raster::projectRaster(
+                population_raster, 
+                crs = raster::crs(poly_projected_sf)
+              )
+            
+            # Extract values
+              pop_values <- raster::extract(
+                population_raster_proj, 
+                poly_projected_sf, 
+                fun = sum, 
+                na.rm = TRUE
+              )
+            
+              total_population <- sum(pop_values, na.rm = TRUE)
+            
+            # Calculate population density (people per km²)
+              results$pop_density <- as.numeric(total_population / area_km2)
+              
+              cat("  Total population:", round(total_population), "\n")
+              cat("  Area (km²):", round(area_km2, 2), "\n")
+              cat("  Population density (per km²):", round(results$pop_density, 2), "\n")
+              
+            } else {
+              # No population raster file provided
+                cat("  No population raster file provided or file not found.\n")
+                cat("  Please provide path to GPWv4 population density raster using population_raster_path parameter.\n")
+                results$pop_density <- NA
+            }
+            
+          }, error = function(e) {
+            cat("  Error calculating population density:", e$message, "\n")
+            results$pop_density <- NA
+          })
+      }
+      
+      cat("Processing complete for:", name, "\n\n")
     
     # Convert results list to a dataframe
       return(as.data.frame(lapply(results, function(x) if(length(x) == 0) NA else x)))
@@ -629,59 +674,63 @@
   compute_urbanicity_iterative <- function(communities_list, 
                                            metrics = c("all"),
                                            friction_surface = "walking",
-                                           friction_surface_path = NULL) {  # ADD THIS PARAMETER
+                                           friction_surface_path = NULL,
+                                           population_raster_path = NULL) {
     
     # Set up which metrics to analyze based on user input
-    do_roads <- "all" %in% metrics || "roads" %in% metrics
-    do_shops <- "all" %in% metrics || "shops" %in% metrics
-    do_healthcare <- "all" %in% metrics || "healthcare" %in% metrics
-    do_transport <- "all" %in% metrics || "transport" %in% metrics
-    do_financial <- "all" %in% metrics || "financial" %in% metrics
-    do_schools <- "all" %in% metrics || "schools" %in% metrics
-    do_cell_towers <- "all" %in% metrics || "cell_towers" %in% metrics
-    do_buildings <- "all" %in% metrics || "buildings" %in% metrics
+      do_roads <- "all" %in% metrics || "roads" %in% metrics
+      do_shops <- "all" %in% metrics || "shops" %in% metrics
+      do_healthcare <- "all" %in% metrics || "healthcare" %in% metrics
+      do_transport <- "all" %in% metrics || "transport" %in% metrics
+      do_financial <- "all" %in% metrics || "financial" %in% metrics
+      do_schools <- "all" %in% metrics || "schools" %in% metrics
+      do_cell_towers <- "all" %in% metrics || "cell_towers" %in% metrics
+      do_buildings <- "all" %in% metrics || "buildings" %in% metrics
+      do_population <- "all" %in% metrics || "population" %in% metrics
     
     # Initialize an empty list to store results
-    all_results <- list()
+      all_results <- list()
     
     # Process each community
-    for (i in seq_along(communities_list)) {
-      community_name <- names(communities_list)[i]
-      community_data <- communities_list[[i]]
-      
-      # Process the community with selected metrics
-      result <- compute_urbanicity(
-        community_data, 
-        name = community_name,
-        roads = do_roads,
-        shops = do_shops,
-        healthcare = do_healthcare,
-        transport = do_transport,
-        financial = do_financial,
-        schools = do_schools,
-        cell_towers = do_cell_towers,
-        buildings = do_buildings,
-        friction_surface = friction_surface,
-        friction_surface_path = friction_surface_path
-      )
+      for (i in seq_along(communities_list)) {
+        community_name <- names(communities_list)[i]
+        community_data <- communities_list[[i]]
+        
+        # Process the community with selected metrics
+        result <- compute_urbanicity(
+          community_data, 
+          name = community_name,
+          roads = do_roads,
+          shops = do_shops,
+          healthcare = do_healthcare,
+          transport = do_transport,
+          financial = do_financial,
+          schools = do_schools,
+          cell_towers = do_cell_towers,
+          buildings = do_buildings,
+          population = do_population,
+          friction_surface = friction_surface,
+          friction_surface_path = friction_surface_path,
+          population_raster_path = population_raster_path
+        )
       
       # Add to results list
-      all_results[[i]] <- result
+        all_results[[i]] <- result
     }
     
     # Combine all results into a single data frame
-    result_names <- unique(unlist(lapply(all_results, names)))
-    combined_results <- data.frame(matrix(NA, nrow = length(all_results), ncol = length(result_names)))
-    names(combined_results) <- result_names
-    
-    for (i in seq_along(all_results)) {
-      for (col in names(all_results[[i]])) {
-        combined_results[i, col] <- all_results[[i]][1, col]
+      result_names <- unique(unlist(lapply(all_results, names)))
+      combined_results <- data.frame(matrix(NA, nrow = length(all_results), ncol = length(result_names)))
+      names(combined_results) <- result_names
+      
+      for (i in seq_along(all_results)) {
+        for (col in names(all_results[[i]])) {
+          combined_results[i, col] <- all_results[[i]][1, col]
+        }
       }
+      
+      return(combined_results)
     }
-    
-    return(combined_results)
-  }
   
 # Plot Results
   # Bar Plot For Numeric Variables
