@@ -113,7 +113,7 @@
 # Helper Function to Extend Search for Very Remote Communities
   search_facilities_progressive <- function(center_point, bbox, facility_type, 
                                             friction_raster = NULL, 
-                                            max_search_multiplier = 50,
+                                            max_search_multiplier = 20,
                                             search_increment = 2) {
     
     search_multiplier <- 0
@@ -339,7 +339,7 @@
             friction_global <- raster::raster(friction_surface_path)
           
           # Crop to a larger area around the community (for searching)
-            search_buffer <- 10  # degrees (1000km)
+            search_buffer <- 1  # degrees (100km)
             extent_buffered <- raster::extent(
               bbox["left"] - search_buffer,
               bbox["right"] + search_buffer,
@@ -436,7 +436,7 @@
                   bbox = bbox,
                   facility_type = "paved_road",
                   friction_raster = friction_raster,
-                  max_search_multiplier = 10
+                  max_search_multiplier = 20
               )
             }
             
@@ -452,7 +452,7 @@
                 bbox = bbox,
                 facility_type = "paved_road",
                 friction_raster = friction_raster,
-                max_search_multiplier = 10
+                max_search_multiplier = 20
               )
             }
           }, error = function(e) {

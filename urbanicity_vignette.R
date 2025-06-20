@@ -75,21 +75,27 @@
     # population_raster_path (file path to population raster for computing population density)
     # nighttime_light_path (file path to image for computing nighttime light intensity)
     
-      test_results_boundaries <- compute_urbanicity_iterative(bbox_boundaries,
-                                                              metrics = c("roads", "shops", "healthcare",
-                                                                          "transport", "financial", "schools",
-                                                                          "cell_towers", "buildings", "nighttime_light", "population"),
-                                                              friction_surface_path = paste0(fp, "/friction_surface_walking.geotiff"),
-                                                              population_raster_path = paste0(fp, "/pop_raster.tif"),
-                                                              nighttime_light_path = paste0(fp, "/nighttime_lights.tif"))
-      
-      test_results_5km <- compute_urbanicity_iterative(bbox_5km,
-                                                       metrics = c("roads", "shops", "healthcare",
-                                                                   "transport", "financial", "schools",
-                                                                   "cell_towers", "buildings", "nighttime_light", "population"),
-                                                       friction_surface_path = paste0(fp, "/friction_surface_walking.geotiff"),
-                                                       population_raster_path = paste0(fp, "/pop_raster.tif"),
-                                                       nighttime_light_path = paste0(fp, "/nighttime_lights.tif"))
+      time_boundaries <- system.time({
+        test_results_boundaries <- compute_urbanicity_iterative(
+          bbox_boundaries,
+          metrics = c("roads", "shops", "healthcare", "transport", "financial", "schools",
+                      "cell_towers", "buildings", "nighttime_light", "population"),
+          friction_surface_path = paste0(fp, "/friction_surface_walking.geotiff"),
+          population_raster_path = paste0(fp, "/pop_raster.tif"),
+          nighttime_light_path = paste0(fp, "/nighttime_lights.tif")
+        )
+      })
+        
+      time_5km <- system.time({
+        test_results_5km <- compute_urbanicity_iterative(
+          bbox_5km,
+          metrics = c("roads", "shops", "healthcare", "transport", "financial", "schools",
+                      "cell_towers", "buildings", "nighttime_light", "population"),
+          friction_surface_path = paste0(fp, "/friction_surface_walking.geotiff"),
+          population_raster_path = paste0(fp, "/pop_raster.tif"),
+          nighttime_light_path = paste0(fp, "/nighttime_lights.tif")
+        )
+      })
       
 # Generate Summary Plots of the Results
   summary_plots_boundaries <- create_summary_plots(test_results_boundaries)
