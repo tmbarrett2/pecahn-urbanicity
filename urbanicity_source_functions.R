@@ -76,11 +76,11 @@
 # Helper Function to Compute Mean Nighttime Light Value
   get_light_mean <- function(polygon_sf, raster_data) {
       polygon_sp <- as(polygon_sf, "Spatial")
-      light_mean <- extract(raster_data, polygon_sp, fun = mean, na.rm = TRUE)
+      light_mean <- raster::extract(raster_data, polygon_sp, fun = mean, na.rm = TRUE)
       return(round(light_mean, 3))
     }
   
-# Helper Function to Calculate Travel Time Using Friction Surface
+# Helper Function to Calculate Travel Time Using Friction Surface Raster
   calculate_travel_time <- function(from_point, to_points, friction_raster, max_search_km = 50) {
     if (is.null(to_points) || nrow(to_points) == 0) {
       return(NA)
@@ -255,6 +255,7 @@
                                  buildings = TRUE,
                                  nighttime_light = TRUE,
                                  population = TRUE,
+                                 search_buffer = 1,  # degrees (100km)
                                  friction_surface_path = NULL,
                                  population_raster_path = NULL,
                                  nighttime_light_path = NULL) {
@@ -315,9 +316,15 @@
     # Define bounding box for osmdata in the correct format
       osm_bbox <- c(bbox["left"], bbox["bottom"], bbox["right"], bbox["top"])
       
-    # Calculate center point from bbox
+      # Calculate center point from bbox
       center_lon <- (bbox["left"] + bbox["right"]) / 2
       center_lat <- (bbox["bottom"] + bbox["top"]) / 2
+      
+    # Determine appropriate UTM zone for this location
+      utm_zone <- floor((center_lon + 180) / 6) + 1
+      hemisphere <- ifelse(center_lat < 0, "+south", "")
+      utm_crs <- paste0("+proj=utm +zone=", utm_zone, " ", hemisphere, " +datum=WGS84")
+      cat("  Location UTM zone:", utm_zone, hemisphere, "\n")
       
     # Create center point sf object
       center_point <- sf::st_sfc(sf::st_point(c(center_lon, center_lat)), crs = 4326)
@@ -339,7 +346,6 @@
             friction_global <- raster::raster(friction_surface_path)
           
           # Crop to a larger area around the community (for searching)
-            search_buffer <- 1  # degrees (100km)
             extent_buffered <- raster::extent(
               bbox["left"] - search_buffer,
               bbox["right"] + search_buffer,
@@ -386,20 +392,39 @@
                 roads_sf$surface <- NA
               }
               
-            # Classify roads based on surface tag
+            # Initialize road_type column first
               roads_sf$road_type <- "other"
-              roads_sf$road_type[roads_sf$surface %in% paved_surfaces] <- "paved"
-              roads_sf$road_type[roads_sf$surface %in% unpaved_surfaces] <- "unpaved"
-            
+              
+            # Classify roads based on surface tag
+              if (!all(is.na(roads_sf$surface))) {
+              # Only try to assign if there are non-NA surface values
+                paved_mask <- !is.na(roads_sf$surface) & roads_sf$surface %in% paved_surfaces
+                if (any(paved_mask)) {
+                  roads_sf$road_type[paved_mask] <- "paved"
+                }
+                
+                unpaved_mask <- !is.na(roads_sf$surface) & roads_sf$surface %in% unpaved_surfaces
+                if (any(unpaved_mask)) {
+                  roads_sf$road_type[unpaved_mask] <- "unpaved"
+                }
+              }
+              
             # Classify roads based on highway tag for tracks and paths
-            # This helps when surface information is missing but highway type indicates unpaved
-              if ("highway" %in% colnames(roads_sf)) {
+              if ("highway" %in% colnames(roads_sf) && !all(is.na(roads_sf$highway))) {
                 unpaved_highway_types <- c("track", "path")
-                roads_sf$road_type[roads_sf$highway %in% unpaved_highway_types] <- "unpaved"
+                highway_mask <- !is.na(roads_sf$highway) & roads_sf$highway %in% unpaved_highway_types
+                if (any(highway_mask)) {
+                  roads_sf$road_type[highway_mask] <- "unpaved"
+                }
               }
             
             # Calculate road lengths
-              roads_sf <- sf::st_transform(roads_sf, crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84"))
+              # Determine appropriate UTM zone based on longitude
+                center_lon <- (bbox["left"] + bbox["right"]) / 2
+                utm_zone <- floor((center_lon + 180) / 6) + 1
+                hemisphere <- ifelse(center_lat < 0, "+south", "")
+                utm_crs <- paste0("+proj=utm +zone=", utm_zone, " ", hemisphere, " +datum=WGS84")
+                roads_sf <- sf::st_transform(roads_sf, crs = sf::st_crs(utm_crs))
               roads_sf$length <- as.numeric(sf::st_length(roads_sf))
             
             # Summarize by road type
@@ -414,10 +439,15 @@
               if (unpaved_length > 0) {
                 results$paved_to_unpaved_ratio <- as.numeric(paved_length / unpaved_length)
               } else {
-                results$paved_to_unpaved_ratio <- Inf
+                results$paved_to_unpaved_ratio <- NA
               }
               
-              results$pct_paved_roads <- 100 * as.numeric(paved_length / total_length)
+            # Calculate percent paved
+              if (unpaved_length > 0) {
+                results$pct_paved_roads <- 100 * as.numeric(paved_length / total_length)
+              } else {
+                results$pct_paved_roads <- NA
+              }
             
             # Calculate travel time to nearest paved road
               paved_roads <- roads_sf[roads_sf$road_type == "paved", ]
@@ -490,15 +520,39 @@
       if (transport) {
         tryCatch({
           cat("  Analyzing transport infrastructure...\n")
-          transport_data <- osmdata::opq(osm_bbox) %>%
+          
+          transport_count <- 0
+          
+        # Query public transport nodes
+          transport_data1 <- osmdata::opq(osm_bbox) %>%
             osmdata::add_osm_feature(key = "public_transport") %>%
-            osmdata::add_osm_feature(key = "highway", value = c("bus_stop")) %>%
+            osmdata::osmdata_sf()
+          
+          if (!is.null(transport_data1$osm_points) && nrow(transport_data1$osm_points) > 0) {
+            transport_count <- transport_count + nrow(transport_data1$osm_points)
+          }
+          
+        # Query bus stops
+          bus_data <- osmdata::opq(osm_bbox) %>%
+            osmdata::add_osm_feature(key = "highway", value = "bus_stop") %>%
+            osmdata::osmdata_sf()
+          
+          if (!is.null(bus_data$osm_points) && nrow(bus_data$osm_points) > 0) {
+            transport_count <- transport_count + nrow(bus_data$osm_points)
+          }
+          
+        # Query railway stations
+          rail_data <- osmdata::opq(osm_bbox) %>%
             osmdata::add_osm_feature(key = "railway", value = c("station", "halt")) %>%
             osmdata::osmdata_sf()
           
-          transport_count <- 0
-          if (!is.null(transport_data$osm_points) && nrow(transport_data$osm_points) > 0) {
-            transport_count <- transport_count + nrow(transport_data$osm_points)
+          if (!is.null(rail_data$osm_points) && nrow(rail_data$osm_points) > 0) {
+            transport_count <- transport_count + nrow(rail_data$osm_points)
+          }
+          
+        # Check for polygons too (some stations are mapped as buildings)
+          if (!is.null(rail_data$osm_polygons) && nrow(rail_data$osm_polygons) > 0) {
+            transport_count <- transport_count + nrow(rail_data$osm_polygons)
           }
           
           results$n_transport_stops <- transport_count
@@ -594,36 +648,63 @@
             osmdata::osmdata_sf()
           
           if (!is.null(buildings_data$osm_polygons) && nrow(buildings_data$osm_polygons) > 0) {
-            # Transform to a suitable projection for accurate area calculation
-              buildings_projected <- sf::st_transform(
-                buildings_data$osm_polygons, 
-                crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84")
-              )
+          # Determine appropriate UTM zone based on longitude
+            center_lon <- (bbox["left"] + bbox["right"]) / 2
+            center_lat <- (bbox["bottom"] + bbox["top"]) / 2
+            utm_zone <- floor((center_lon + 180) / 6) + 1
+            hemisphere <- ifelse(center_lat < 0, "+south", "")
+            utm_crs <- paste0("+proj=utm +zone=", utm_zone, " ", hemisphere, " +datum=WGS84")
             
-            # Calculate area of each building
-              buildings_projected$area <- sf::st_area(buildings_projected)
+            cat("  Using UTM zone", utm_zone, hemisphere, "for area calculations\n")
             
-            # Calculate total building area
-              total_building_area <- sum(as.numeric(buildings_projected$area))
+          # Transform to appropriate projection for accurate area calculation
+            buildings_projected <- sf::st_transform(
+              buildings_data$osm_polygons, 
+              crs = sf::st_crs(utm_crs)
+            )
             
-            # Calculate bounding box area
-              poly_projected <- sf::st_transform(
-                poly, 
-                crs = sf::st_crs("+proj=utm +zone=32 +datum=WGS84")
-              )
-              bbox_area <- as.numeric(sf::st_area(poly_projected))
+          # Calculate area of each building
+            buildings_projected$area <- sf::st_area(buildings_projected)
             
+          # Calculate total building area
+            total_building_area <- sum(as.numeric(buildings_projected$area), na.rm = TRUE)
+            
+          # Calculate bounding box area
+            poly_projected <- sf::st_transform(
+              poly, 
+              crs = sf::st_crs(utm_crs)  # Use the same UTM zone!
+            )
+            bbox_area <- as.numeric(sf::st_area(poly_projected))
+            
+            cat("  Total building area:", round(total_building_area), "m²\n")
+            cat("  Bounding box area:", round(bbox_area), "m²\n")
+            
+          # Check for potential issues
+            if (bbox_area == 0) {
+              cat("  WARNING: Bounding box area is 0!\n")
+              results$building_density <- NA
+            } else if (!is.finite(total_building_area) || !is.finite(bbox_area)) {
+              cat("  WARNING: Non-finite values in area calculation\n")
+              results$building_density <- NA
+            } else {
             # Calculate building density (% of area covered by buildings)
               building_density <- (total_building_area / bbox_area) * 100
               
-              results$building_density_pct <- as.numeric(building_density)
-            } else {
-              results$building_density_pct <- 0
+             # Check if result is valid
+              if (is.finite(building_density) && building_density >= 0 && building_density <= 100) {
+                results$building_density <- as.numeric(building_density)
+              } else {
+                cat("  WARNING: Building density outside valid range (0-100%): ", building_density, "\n")
+                results$building_density <- NA
+              }
             }
-          }, error = function(e) {
-            cat("  Error processing buildings:", e$message, "\n")
-            results$building_density_pct <- NA
-          })
+          } else {
+            results$building_density <- 0
+          }
+        }, error = function(e) {
+          cat("  Error processing buildings:", e$message, "\n")
+          results$building_density <- NA
+        })
       }
       
       # Nighttime Light (from VIIRS)
@@ -634,12 +715,12 @@
             viirs_raster <- raster(nighttime_light_path)
             
             # Convert to sf object and add id column
-            poly_for_nighttime_light <- sf::st_sf(geometry = poly)
-            poly_for_nighttime_light$id <- 1
-            
-            nighttime_light <- get_light_mean(poly_for_nighttime_light, viirs_raster)[1]
-            
-            results$nighttime_light <- as.numeric(nighttime_light)
+              poly_for_nighttime_light <- sf::st_sf(geometry = poly)
+              poly_for_nighttime_light$id <- 1
+              
+              nighttime_light <- get_light_mean(poly_for_nighttime_light, viirs_raster)[1]
+              
+              results$nighttime_light <- as.numeric(nighttime_light)
             
           }, error = function(e) {
             cat("  Error processing nighttime light:", e$message, "\n")
@@ -652,77 +733,75 @@
         tryCatch({
           cat("  Calculating population density...\n")
           
-          # Check if a local population raster path is provided
-            if (!is.null(population_raster_path) && file.exists(population_raster_path)) {
-              cat("  Using local population raster file:", population_raster_path, "\n")
+          if (!is.null(population_raster_path) && file.exists(population_raster_path)) {
+            cat("  Using local population raster file:", population_raster_path, "\n")
             
-            # Load the population raster
-              population_global <- raster::raster(population_raster_path)
+          # Load the population raster
+            population_global <- raster::raster(population_raster_path)
             
-            # Crop to community area
-              extent_community <- raster::extent(
-                bbox["left"],
-                bbox["right"],
-                bbox["bottom"],
-                bbox["top"]
-              )
-              
-              population_raster <- raster::crop(population_global, extent_community)
-              cat("  Population raster loaded and cropped successfully\n")
+          # Crop to community area
+            extent_community <- raster::extent(
+              bbox["left"],
+              bbox["right"],
+              bbox["bottom"],
+              bbox["top"]
+            )
             
-            # Calculate population density
-            # First, project the polygon to equal area projection for accurate area calculation
-              poly_projected <- sf::st_transform(
-                poly, 
-                crs = sf::st_crs("+proj=aea +lat_1=20 +lat_2=-23 +lat_0=0 +lon_0=25 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
-              )
+            population_raster <- raster::crop(population_global, extent_community)
+            cat("  Population raster loaded and cropped successfully\n")
             
-            # Convert sfc to sf object for extract function
-              poly_projected_sf <- sf::st_sf(geometry = poly_projected)
-              
-            # Calculate area in square kilometers
-              area_m2 <- as.numeric(sf::st_area(poly_projected))
-              area_km2 <- area_m2 / 1000000
+          # Calculate population density
+          # Use appropriate UTM projection for accurate area calculation
+            center_lon <- (bbox["left"] + bbox["right"]) / 2
+            center_lat <- (bbox["bottom"] + bbox["top"]) / 2
+            utm_zone <- floor((center_lon + 180) / 6) + 1
+            hemisphere <- ifelse(center_lat < 0, "+south", "")
+            utm_crs <- paste0("+proj=utm +zone=", utm_zone, " ", hemisphere, " +datum=WGS84")
             
-            # Extract population values within the community boundary
-            # Reproject raster to match the projected polygon
-              population_raster_proj <- raster::projectRaster(
-                population_raster, 
-                crs = raster::crs(poly_projected_sf)
-              )
+            poly_projected <- sf::st_transform(poly, crs = sf::st_crs(utm_crs))
             
-            # Extract values
-              pop_values <- raster::extract(
-                population_raster_proj, 
-                poly_projected_sf, 
-                fun = sum, 
-                na.rm = TRUE
-              )
+          # Convert sfc to sf object for extract function
+            poly_projected_sf <- sf::st_sf(geometry = poly_projected)
             
-              total_population <- sum(pop_values, na.rm = TRUE)
+          # Calculate area in square kilometers
+            area_m2 <- as.numeric(sf::st_area(poly_projected))
+            area_km2 <- area_m2 / 1000000
             
-            # Calculate population density (people per km²)
-              results$pop_density <- as.numeric(total_population / area_km2)
-              
-              cat("  Total population:", round(total_population), "\n")
-              cat("  Area (km²):", round(area_km2, 2), "\n")
-              cat("  Population density (per km²):", round(results$pop_density, 2), "\n")
-              
-            } else {
-              # No population raster file provided
-                cat("  No population raster file provided or file not found.\n")
-                cat("  Please provide path to GPWv4 population density raster using population_raster_path parameter.\n")
-                results$pop_density <- NA
-            }
+          # Extract population values within the community boundary
+          # Reproject raster to match the projected polygon
+            population_raster_proj <- raster::projectRaster(
+              population_raster, 
+              crs = raster::crs(poly_projected_sf)
+            )
             
-          }, error = function(e) {
-            cat("  Error calculating population density:", e$message, "\n")
+          # Extract values
+            pop_values <- raster::extract(
+              population_raster_proj, 
+              poly_projected_sf, 
+              fun = sum, 
+              na.rm = TRUE
+            )
+            
+            total_population <- sum(pop_values, na.rm = TRUE)
+            
+          # Calculate population density (people per km²)
+            results$pop_density <- as.numeric(total_population / area_km2)
+            
+            cat("  Total population:", round(total_population), "\n")
+            cat("  Area (km²):", round(area_km2, 2), "\n")
+            cat("  Population density (per km²):", round(results$pop_density, 2), "\n")
+            
+          } else {
+            cat("  No population raster file provided or file not found.\n")
             results$pop_density <- NA
-          })
+          }
+          
+        }, error = function(e) {
+          cat("  Error calculating population density:", e$message, "\n")
+          results$pop_density <- NA
+        })
       }
-      
-      cat("Processing complete for:", name, "\n\n")
-    
+        
     # Convert results list to a dataframe
       return(as.data.frame(lapply(results, function(x) if(length(x) == 0) NA else x)))
   }
@@ -732,6 +811,7 @@
 # metrics is a vector of the measures you want to compute.
   compute_urbanicity_iterative <- function(communities_list, 
                                            metrics = c("all"),
+                                           search_buffer = 1,  # degrees (100km)
                                            friction_surface_path = NULL,
                                            population_raster_path = NULL,
                                            nighttime_light_path = NULL) {
@@ -848,8 +928,8 @@
       for (var in all_vars) {
         
         # Check if variable is numeric (continuous)
-        if (is.numeric(data[[var]])) {
-          all_plots[[var]] <- create_numeric_plot(data, var)
+          if (is.numeric(data[[var]])) {
+            all_plots[[var]] <- create_numeric_plot(data, var)
         }
       }
     
