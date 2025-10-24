@@ -9,7 +9,7 @@ Authors@R:
       person(given = "Lev", family = "Kolinski", email = "lev.kolinski@duke.edu",
              role = "aut"),
       person(given = "Melanie", family = "Martin", email = "martinm7@uw.edu",
-             role = "aut"),
+             role = "aut")
     )
 Description: Tools for computing geospatial and infrastructural measures of 
     urbanicity using OpenStreetMap and raster datasets. Developed for the 
