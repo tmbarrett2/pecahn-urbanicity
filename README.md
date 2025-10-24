@@ -17,4 +17,4 @@ You can install the package directly from GitHub:
 
 ```r
 # install.packages("devtools")
-remotes::install_github("tylermbarrett/pecahn-urbanicity/pecahnurbanicity")
+devtools::install_github("tylermbarrett/pecahn-urbanicity/pecahnurbanicity")
