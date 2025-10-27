@@ -9,9 +9,9 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
-<meta name="author" content="Tyler Barrett, Lev Kolinski, and Melanie Martin" />
+<meta name="author" content="Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda Lea, and Melanie Martin" />
 
-<meta name="date" content="2025-10-24" />
+<meta name="date" content="2025-10-27" />
 
 <title>Urbanicity Index for Anthropological Field Sites</title>
 
@@ -1499,19 +1499,19 @@ border-radius: 0px;
 
 <h1 class="title toc-ignore">Urbanicity Index for Anthropological Field
 Sites</h1>
-<h4 class="author">Tyler Barrett, Lev Kolinski, and Melanie Martin</h4>
-<h4 class="date">2025-10-24</h4>
+<h4 class="author">Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda
+Lea, and Melanie Martin</h4>
+<h4 class="date">2025-10-27</h4>
 
 </div>
 
 
 <div id="introduction" class="section level1">
 <h1>Introduction</h1>
-<p>This tutorial demonstrates how to compute and visualize
-<strong>urbanicity metrics</strong> for anthropological fieldsites using
-the <code>pecahnurbanicity</code> package, developed as part of the
-<strong>Population Ecology, Aging, and Health Network
-(PEcAHN)</strong>.</p>
+<p>This tutorial demonstrates how to compute and visualize urbanicity
+metrics for anthropological field sites using the
+<code>pecahnurbanicity</code> package, developed as part of the <a href="https://sites.duke.edu/pecahn/"><strong>Population Ecology, Aging,
+and Health Network (PEcAHN)</strong></a>.</p>
 <p>These tools integrate multiple open-access datasets, including
 OpenStreetMap (OSM) infrastructure data, raster-based friction surfaces,
 population density grids, and nighttime light imagery.</p>
@@ -1536,19 +1536,19 @@ available datasets:</p>
 measures):<br />
 <em>Source:</em> Malaria Atlas Project – Accessibility to
 Healthcare<br />
-<a href="https://malariaatlas.org/project-resources/accessibility-to-healthcare/">https://malariaatlas.org/project-resources/accessibility-to-healthcare/</a><br />
+<a href="https://malariaatlas.org/project-resources/accessibility-to-healthcare/" class="uri">https://malariaatlas.org/project-resources/accessibility-to-healthcare/</a><br />
 <em>Reference:</em> Weiss et al. (2020). <em>Nature Medicine</em>,
 26(12), 1835–1842. DOI: <a href="https://doi.org/10.1038/s41591-020-1059-1">10.1038/s41591-020-1059-1</a></p></li>
 <li><p><strong>Population density raster</strong> (for population
 density estimation):<br />
 <em>Source:</em> NASA’s Gridded Population of the World (GPW)
 dataset<br />
-<a href="https://www.earthdata.nasa.gov/data/projects/gpw">https://www.earthdata.nasa.gov/data/projects/gpw</a></p></li>
+<a href="https://www.earthdata.nasa.gov/data/projects/gpw" class="uri">https://www.earthdata.nasa.gov/data/projects/gpw</a></p></li>
 <li><p><strong>Nighttime light imagery</strong> (for light intensity
 measures):<br />
 <em>Source:</em> NASA Earth at Night – Black Marble 2016 Color
 Maps<br />
-<a href="https://visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps">https://visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps</a></p></li>
+<a href="https://visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps" class="uri">https://visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps</a></p></li>
 </ol>
 <p>PEcAHN members can download these data from the shared Google Drive
 folder:<br />
@@ -1564,8 +1564,11 @@ folder:<br />
 
 # Load the package
 library(pecahnurbanicity)</code></pre>
-<p>Set your local file path where the rasters and CSV files are
-stored:</p>
+<p><code>pecahnurbanicity</code> has help documentation. For any
+function, you can use <code>?function-name</code> to bring up the
+documentation.</p>
+<p>Set your local file path to where the rasters and site coordinate
+files are stored:</p>
 <pre class="r"><code>fp &lt;- &quot;your_local_path/pecahn-urbanicity/test_data&quot;</code></pre>
 <hr />
 </div>
@@ -1595,7 +1598,7 @@ bbox_5km        &lt;- create_bounding_boxes(test_data_5km, distance_km = 5)</cod
 <ul>
 <li>The <strong>bounding box</strong> defines the spatial extent used
 for OSM queries.</li>
-<li>If your dataset includes only coordinates, the function expands
+<li>If your dataset includes only a central point, the function expands
 outward by the given radius (default: 5 km).</li>
 </ul>
 <hr />
@@ -1603,11 +1606,11 @@ outward by the given radius (default: 5 km).</li>
 <div id="compute-urbanicity-measures" class="section level1">
 <h1>Compute Urbanicity Measures</h1>
 <p>Use <code>compute_urbanicity_iterative()</code> to generate
-urbanicity indicators for multiple communities.</p>
+urbanicity metrics for multiple communities.</p>
 <pre class="r"><code>test_results_5km &lt;- compute_urbanicity_iterative(
   bbox_5km,
   metrics = &quot;all&quot;,
-  search_buffer = 1,  # ~100 km
+  search_buffer = 1,  # Expand search by ~100 km as needed
   friction_surface_path  = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
   population_raster_path = file.path(fp, &quot;pop_raster.tif&quot;),
   nighttime_light_path   = file.path(fp, &quot;nighttime_lights.tif&quot;),
@@ -1627,7 +1630,7 @@ urbanicity indicators for multiple communities.</p>
 <div id="visualize-results" class="section level1">
 <h1>Visualize Results</h1>
 <p>The <code>create_summary_plots()</code> function automatically
-generates ggplot2-based summary plots for all numeric variables.</p>
+generates summary plots for all numeric variables.</p>
 <pre class="r"><code>summary_plots_5km &lt;- create_summary_plots(test_results_5km)
 
 # Example plots

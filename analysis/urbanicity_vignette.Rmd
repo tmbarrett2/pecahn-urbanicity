@@ -1,0 +1,178 @@
+---
+title: "Urbanicity Index for Anthropological Field Sites"
+author: "Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda Lea, and Melanie Martin"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: flatly
+---
+
+# Introduction
+
+This tutorial demonstrates how to compute and visualize urbanicity metrics for anthropological field sites using the `pecahnurbanicity` package, developed as part of the [**Population Ecology, Aging, and Health Network (PEcAHN)**](https://sites.duke.edu/pecahn/).
+
+These tools integrate multiple open-access datasets, including OpenStreetMap (OSM) infrastructure data, raster-based friction surfaces, population density grids, and nighttime light imagery.
+
+------------------------------------------------------------------------
+
+# Installation
+
+You can install the development version of **pecahnurbanicity** directly from GitHub:
+
+``` r
+# install.packages("devtools")
+devtools::install_github("tmbarrett2/pecahn-urbanicity/pecahnurbanicity")
+```
+
+Then load the package:
+
+``` r
+library(pecahnurbanicity)
+```
+
+------------------------------------------------------------------------
+
+# Required Data
+
+To replicate the examples below, you will need several publicly available datasets:
+
+1.  **Friction surface raster** (for travel time measures):\
+    *Source:* Malaria Atlas Project – Accessibility to Healthcare\
+    <https://malariaatlas.org/project-resources/accessibility-to-healthcare/>\
+    *Reference:* Weiss et al. (2020). *Nature Medicine*, 26(12), 1835–1842. DOI: [10.1038/s41591-020-1059-1](https://doi.org/10.1038/s41591-020-1059-1)
+
+2.  **Population density raster** (for population density estimation):\
+    *Source:* NASA’s Gridded Population of the World (GPW) dataset\
+    <https://www.earthdata.nasa.gov/data/projects/gpw>
+
+3.  **Nighttime light imagery** (for light intensity measures):\
+    *Source:* NASA Earth at Night – Black Marble 2016 Color Maps\
+    <https://visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps>
+
+PEcAHN members can download these data from the shared Google Drive folder:\
+<https://drive.google.com/drive/u/0/folders/1C6RWI7yhAM9UDjwMc7w9nxW30W5u3wee>
+
+Save the raster files to a local folder (e.g., `pecahn-urbanicity/test_data/`).
+
+------------------------------------------------------------------------
+
+# Setup
+
+``` r
+# Install dependencies if not already available
+# install.packages(c("osmdata", "sf", "raster", "gdistance", "ggplot2", "dplyr"))
+
+# Load the package
+library(pecahnurbanicity)
+```
+
+`pecahnurbanicity` has help documentation. For any function, you can use `?function-name` to bring up the documentation.
+
+Set your local file path to where the rasters and site coordinate files are stored:
+
+``` r
+fp <- "your_local_path/pecahn-urbanicity/test_data"
+```
+
+------------------------------------------------------------------------
+
+# Load Example Data
+
+Two example datasets are provided:
+
+1.  **Boundary-defined communities** (`test_data_boundaries.csv`)\
+    Communities with fully specified bounding boxes (north/south/east/west coordinates).
+
+2.  **Point-defined communities** (`test_data_5km.csv`)\
+    Communities defined by a single central point and a 5 km search radius.
+
+``` r
+test_data_boundaries <- read.csv(file.path(fp, "test_data_boundaries.csv"))
+test_data_5km        <- read.csv(file.path(fp, "test_data_5km.csv"))
+```
+
+------------------------------------------------------------------------
+
+# Create Bounding Boxes
+
+Use `create_bounding_boxes()` to generate bounding boxes for each community.
+
+``` r
+bbox_boundaries <- create_bounding_boxes(test_data_boundaries)
+bbox_5km        <- create_bounding_boxes(test_data_5km, distance_km = 5)
+```
+
+-   The **bounding box** defines the spatial extent used for OSM queries.
+-   If your dataset includes only a central point, the function expands outward by the given radius (default: 5 km).
+
+------------------------------------------------------------------------
+
+# Compute Urbanicity Measures
+
+Use `compute_urbanicity_iterative()` to generate urbanicity metrics for multiple communities.
+
+``` r
+test_results_5km <- compute_urbanicity_iterative(
+  bbox_5km,
+  metrics = "all",
+  search_buffer = 1,  # Expand search by ~100 km as needed
+  friction_surface_path  = file.path(fp, "friction_surface_walking.geotiff"),
+  population_raster_path = file.path(fp, "pop_raster.tif"),
+  nighttime_light_path   = file.path(fp, "nighttime_lights.tif"),
+  verbose = FALSE
+)
+```
+
+You can also subset metrics:
+
+``` r
+test_results_subset <- compute_urbanicity_iterative(
+  bbox_5km,
+  metrics = c("roads", "shops", "healthcare", "schools", "population"),
+  search_buffer = 1,
+  friction_surface_path  = file.path(fp, "friction_surface_walking.geotiff"),
+  population_raster_path = file.path(fp, "pop_raster.tif"),
+  nighttime_light_path   = file.path(fp, "nighttime_lights.tif")
+)
+```
+
+------------------------------------------------------------------------
+
+# Visualize Results
+
+The `create_summary_plots()` function automatically generates summary plots for all numeric variables.
+
+``` r
+summary_plots_5km <- create_summary_plots(test_results_5km)
+
+# Example plots
+summary_plots_5km$pct_paved_roads
+summary_plots_5km$travel_time_healthcare_min
+summary_plots_5km$pop_density
+summary_plots_5km$nighttime_light
+```
+
+------------------------------------------------------------------------
+
+# Output Interpretation
+
+Each column in the resulting data frame corresponds to a specific urbanicity indicator, such as:
+
+| Variable | Description |
+|---------------------------------|---------------------------------------|
+| `pct_paved_roads` | Percent of total road length that is paved |
+| `travel_time_healthcare_min` | Estimated walking time (min) to nearest healthcare facility |
+| `travel_time_school_min` | Estimated walking time (min) to nearest school |
+| `n_shops` | Number of commercial points of interest |
+| `n_financial` | Number of financial institutions (ATMs, banks) |
+| `n_transport_stops` | Number of public transport nodes |
+| `building_density` | Proportion of built-up land area |
+| `pop_density` | Average population per km² |
+| `nighttime_light` | Mean nighttime light intensity |
+
+These indicators can be aggregated or combined into composite indices of urbanicity.
+
+------------------------------------------------------------------------
