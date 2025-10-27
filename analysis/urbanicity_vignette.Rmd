@@ -118,7 +118,7 @@ Use `compute_urbanicity_iterative()` to generate urbanicity metrics for multiple
 test_results_5km <- compute_urbanicity_iterative(
   bbox_5km,
   metrics = "all",
-  search_buffer = 1,  # Expand search by ~100 km as needed
+  search_buffer = 10,  # Expand search by ~1,000 km as needed
   friction_surface_path  = file.path(fp, "friction_surface_walking.geotiff"),
   population_raster_path = file.path(fp, "pop_raster.tif"),
   nighttime_light_path   = file.path(fp, "nighttime_lights.tif"),

@@ -1610,7 +1610,7 @@ urbanicity metrics for multiple communities.</p>
 <pre class="r"><code>test_results_5km &lt;- compute_urbanicity_iterative(
   bbox_5km,
   metrics = &quot;all&quot;,
-  search_buffer = 1,  # Expand search by ~100 km as needed
+  search_buffer = 10,  # Expand search by ~1,000 km as needed
   friction_surface_path  = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
   population_raster_path = file.path(fp, &quot;pop_raster.tif&quot;),
   nighttime_light_path   = file.path(fp, &quot;nighttime_lights.tif&quot;),
