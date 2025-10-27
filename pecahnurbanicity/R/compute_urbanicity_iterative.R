@@ -83,7 +83,7 @@ compute_urbanicity_iterative <- function(communities_list,
     )
     utils::setTxtProgressBar(pb, i)
   }
-  utils::close(pb)
+  close(pb)
   
   # Combine results safely across all communities
   result_names <- unique(unlist(lapply(all_results, names)))
