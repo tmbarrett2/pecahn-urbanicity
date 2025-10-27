@@ -58,8 +58,8 @@ compute_urbanicity <- function(community_data, name = NULL,
   
   # Redirect output if not verbose
   if (!verbose) {
-    utils::sink(tempfile())
-    on.exit(utils::sink(), add = TRUE)
+    sink(tempfile())
+    sink(), add = TRUE)
   }
   
   # Ensure required packages are installed
