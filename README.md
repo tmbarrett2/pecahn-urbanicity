@@ -1,5 +1,5 @@
 ## Urbanicity Index for Anthropological Field Sites
-### Developed as part of the Population Ecology, Aging, and Health Network (PEcAHN)
+### Developed as part of the [Population Ecology, Aging, and Health Network (PEcAHN)](https://sites.duke.edu/pecahn/)
 
 This repository contains the **`pecahnurbanicity`** R package, which provides tools to compute measures of urbanicity from publicly available geospatial data.
 
@@ -17,4 +17,4 @@ You can install the package directly from GitHub:
 
 ```r
 # install.packages("devtools")
-devtools::install_github("tylermbarrett/pecahn-urbanicity/pecahnurbanicity")
+devtools::install_github("tmbarrett2/pecahn-urbanicity/pecahnurbanicity")
