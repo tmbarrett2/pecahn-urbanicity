@@ -5,17 +5,22 @@
 \title{Compute urbanicity metrics for multiple communities}
 \usage{
 compute_urbanicity_iterative(
-  communities_list,
+  local_bboxes,
+  regional_bboxes = NULL,
   metrics = c("all"),
   search_buffer = 1,
   friction_surface_path = NULL,
-  population_raster_path = NULL,
-  nighttime_light_path = NULL,
+  population_raster_paths = NULL,
+  nighttime_light_paths = NULL,
   verbose = FALSE
 )
 }
 \arguments{
-\item{communities_list}{A named list of community data (each containing \code{bbox}, \code{project}, \code{ethnicity}, and \code{community}).}
+\item{local_bboxes}{A named list of community data (each containing \code{bbox}, \code{project}, \code{ethnicity}, and \code{community}).
+This represents the local bounding box for population density, nighttime lights, and infrastructure counts.}
+
+\item{regional_bboxes}{Optional named list of community data with larger bounding boxes for distance/travel
+time calculations. If NULL, uses local_bboxes for all measures.}
 
 \item{metrics}{Character vector specifying which indicators to compute (\code{"all"} or subset).}
 
@@ -23,27 +28,52 @@ compute_urbanicity_iterative(
 
 \item{friction_surface_path}{Path to local friction surface raster.}
 
-\item{population_raster_path}{Path to local population density raster.}
+\item{population_raster_paths}{Character vector of paths to population density rasters (e.g., WorldPop) for multiple years.}
 
-\item{nighttime_light_path}{Path to local nighttime light raster.}
+\item{nighttime_light_paths}{Character vector of paths to nighttime light rasters (e.g., VIIRS) for multiple years.}
 
 \item{verbose}{Logical; if \code{TRUE}, prints intermediate output from each community run (default = \code{FALSE}).}
 }
 \value{
 A combined \code{data.frame} with one row per community and columns for each calculated metric.
+Population density columns are named \code{pop_density_YYYY} and nighttime light columns are named \code{nighttime_light_YYYY}.
 }
 \description{
 Iteratively applies \code{\link[=compute_urbanicity]{compute_urbanicity()}} across a list of communities, generating a combined data frame
-of urbanicity indicators for each location. Displays a progress bar during execution.
+of urbanicity indicators for each location. Displays a progress bar during execution. Supports multi-year
+analysis for population density (WorldPop) and nighttime lights (Earth Observation Group). Supports
+separate bounding boxes for local village-level measures and regional distance measures.
+}
+\details{
+Years are automatically extracted from raster filenames using the pattern \verb{_YYYY_}.
+
+The local bounding box (communities_list) is used for: population density, nighttime lights, building density,
+and counts of shops, financial services, transport stops, and cell towers.
+
+The regional bounding box (regional_communities_list) is used for: travel time to healthcare, schools,
+paved roads, and urban centers.
 }
 \examples{
 \dontrun{
+# Create both local (1km) and regional (5km) bounding boxes
+bbox_1km <- create_bounding_boxes(test_data, distance_km = 1)
+bbox_5km <- create_bounding_boxes(test_data, distance_km = 5)
+
 results <- compute_urbanicity_iterative(
-  communities_list = bbox_5km,
+  local_bboxes = bbox_1km,
+  regional_bboxes = bbox_5km,
   metrics = "all",
   friction_surface_path = "friction_surface_walking.geotiff",
-  population_raster_path = "pop_raster.tif",
-  nighttime_light_path = "nighttime_lights.tif"
+  population_raster_paths = c(
+    "worldpop/global_pop_2015_CN_1km_R2025A_UA_v1.tif",
+    "worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif",
+    "worldpop/global_pop_2025_CN_1km_R2025A_UA_v1.tif"
+  ),
+  nighttime_light_paths = c(
+    "viirs/VNL_npp_2015_global_vcmslcfg_v2.tif",
+    "viirs/VNL_npp_2020_global_vcmslcfg_v2.tif",
+    "viirs/VNL_npp_2024_global_vcmslcfg_v2.tif"
+  )
 )
 }
 

@@ -11,7 +11,7 @@
 
 <meta name="author" content="Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda Lea, and Melanie Martin" />
 
-<meta name="date" content="2025-10-27" />
+<meta name="date" content="2026-01-10" />
 
 <title>Urbanicity Index for Anthropological Field Sites</title>
 
@@ -1501,7 +1501,7 @@ border-radius: 0px;
 Sites</h1>
 <h4 class="author">Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda
 Lea, and Melanie Martin</h4>
-<h4 class="date">2025-10-27</h4>
+<h4 class="date">2026-01-10</h4>
 
 </div>
 
@@ -1514,7 +1514,8 @@ metrics for anthropological field sites using the
 and Health Network (PEcAHN)</strong></a>.</p>
 <p>These tools integrate multiple open-access datasets, including
 OpenStreetMap (OSM) infrastructure data, raster-based friction surfaces,
-population density grids, and nighttime light imagery.</p>
+population density grids, and nighttime light imagery. The package
+supports multi-year analysis to track urbanization trends over time.</p>
 <hr />
 </div>
 <div id="installation" class="section level1">
@@ -1539,19 +1540,21 @@ Healthcare<br />
 <a href="https://malariaatlas.org/project-resources/accessibility-to-healthcare/" class="uri">https://malariaatlas.org/project-resources/accessibility-to-healthcare/</a><br />
 <em>Reference:</em> Weiss et al. (2020). <em>Nature Medicine</em>,
 26(12), 1835–1842. DOI: <a href="https://doi.org/10.1038/s41591-020-1059-1">10.1038/s41591-020-1059-1</a></p></li>
-<li><p><strong>Population density raster</strong> (for population
-density estimation):<br />
-<em>Source:</em> NASA’s Gridded Population of the World (GPW)
-dataset<br />
-<a href="https://www.earthdata.nasa.gov/data/projects/gpw" class="uri">https://www.earthdata.nasa.gov/data/projects/gpw</a></p></li>
-<li><p><strong>Nighttime light imagery</strong> (for light intensity
-measures):<br />
-<em>Source:</em> NASA Earth at Night – Black Marble 2016 Color
-Maps<br />
-<a href="https://visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps" class="uri">https://visibleearth.nasa.gov/images/144898/earth-at-night-black-marble-2016-color-maps</a></p></li>
+<li><p><strong>Population density rasters</strong> (for multi-year
+population density estimation):<br />
+<em>Source:</em> WorldPop Global Project Population Data<br />
+<a href="https://www.worldpop.org/" class="uri">https://www.worldpop.org/</a><br />
+<em>Reference:</em> WorldPop (www.worldpop.org - School of Geography and
+Environmental Science, University of Southampton)</p></li>
+<li><p><strong>Nighttime light imagery</strong> (for multi-year light
+intensity measures):<br />
+<em>Source:</em> Earth Observation Group - VIIRS Nighttime Light<br />
+<a href="https://eogdata.mines.edu/products/vnl/" class="uri">https://eogdata.mines.edu/products/vnl/</a><br />
+<em>Reference:</em> Elvidge et al. (2021). <em>Remote Sensing</em>,
+13(5), 922. DOI: <a href="https://doi.org/10.3390/rs13050922">10.3390/rs13050922</a></p></li>
 </ol>
-<p>PEcAHN members can download these data from the shared Google Drive
-folder:<br />
+<p>PEcAHN members can download these data files from the shared Google
+Drive folder:<br />
 <a href="https://drive.google.com/drive/u/0/folders/1C6RWI7yhAM9UDjwMc7w9nxW30W5u3wee" class="uri">https://drive.google.com/drive/u/0/folders/1C6RWI7yhAM9UDjwMc7w9nxW30W5u3wee</a></p>
 <p>Save the raster files to a local folder (e.g.,
 <code>pecahn-urbanicity/test_data/</code>).</p>
@@ -1581,23 +1584,40 @@ files are stored:</p>
 Communities with fully specified bounding boxes (north/south/east/west
 coordinates).</p></li>
 <li><p><strong>Point-defined communities</strong>
-(<code>test_data_5km.csv</code>)<br />
-Communities defined by a single central point and a 5 km search
+(<code>test_data_single_point.csv</code>)<br />
+Communities defined by a single central point and a user defined
 radius.</p></li>
 </ol>
 <pre class="r"><code>test_data_boundaries &lt;- read.csv(file.path(fp, &quot;test_data_boundaries.csv&quot;))
-test_data_5km        &lt;- read.csv(file.path(fp, &quot;test_data_5km.csv&quot;))</code></pre>
+test_data_single_point &lt;- read.csv(file.path(fp, &quot;test_data_single_point.csv&quot;))</code></pre>
 <hr />
 </div>
 <div id="create-bounding-boxes" class="section level1">
 <h1>Create Bounding Boxes</h1>
 <p>Use <code>create_bounding_boxes()</code> to generate bounding boxes
 for each community.</p>
-<pre class="r"><code>bbox_boundaries &lt;- create_bounding_boxes(test_data_boundaries)
-bbox_5km        &lt;- create_bounding_boxes(test_data_5km, distance_km = 5)</code></pre>
+<p>For optimal results, create <strong>two sets of bounding
+boxes</strong>: - <strong>Local bounding boxes</strong> (1-2 km) for
+community-level measures like population density, nighttime lights, and
+infrastructure counts - <strong>Regional bounding boxes</strong> (5 km)
+for distance measures to facilities that may be further away</p>
+<pre class="r"><code># Create local bounding boxes for community-level measures
+bbox_1km &lt;- create_bounding_boxes(test_data_single_point, distance_km = 1)
+
+# Create regional bounding boxes for distance searches
+bbox_5km &lt;- create_bounding_boxes(test_data_single_point, distance_km = 5)
+
+# Or use the same size for both if appropriate
+bbox_boundaries &lt;- create_bounding_boxes(test_data_boundaries)</code></pre>
 <ul>
-<li>The <strong>bounding box</strong> defines the spatial extent used
-for OSM queries.</li>
+<li>The <strong>local bounding box</strong> defines the spatial extent
+for population density, nighttime lights, building density, and counts
+of local infrastructure (shops, financial services, transport stops,
+cell towers).</li>
+<li>The <strong>regional bounding box</strong> defines the starting
+search area for distance measures (healthcare, schools, paved roads,
+urban centers). The search will expand from this area until facilities
+are found.</li>
 <li>If your dataset includes only a central point, the function expands
 outward by the given radius (default: 5 km).</li>
 </ul>
@@ -1605,45 +1625,147 @@ outward by the given radius (default: 5 km).</li>
 </div>
 <div id="compute-urbanicity-measures" class="section level1">
 <h1>Compute Urbanicity Measures</h1>
-<p>Use <code>compute_urbanicity_iterative()</code> to generate
-urbanicity metrics for multiple communities.</p>
-<pre class="r"><code>test_results_5km &lt;- compute_urbanicity_iterative(
-  bbox_5km,
+<div id="single-year-analysis" class="section level2">
+<h2>Single-Year Analysis</h2>
+<p>For a single year of population and nighttime light data:</p>
+<pre class="r"><code>test_results_single &lt;- compute_urbanicity_iterative(
+  local_bboxes = bbox_1km,
+  regional_bboxes = bbox_5km,
   metrics = &quot;all&quot;,
   search_buffer = 10,  # Expand search by ~1,000 km as needed
   friction_surface_path  = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
-  population_raster_path = file.path(fp, &quot;pop_raster.tif&quot;),
-  nighttime_light_path   = file.path(fp, &quot;nighttime_lights.tif&quot;),
+  population_raster_paths = file.path(fp, &quot;worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif&quot;),
+  nighttime_light_paths   = file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2020_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
   verbose = FALSE
 )</code></pre>
-<p>You can also subset metrics:</p>
-<pre class="r"><code>test_results_subset &lt;- compute_urbanicity_iterative(
-  bbox_5km,
-  metrics = c(&quot;roads&quot;, &quot;shops&quot;, &quot;healthcare&quot;, &quot;schools&quot;, &quot;population&quot;),
-  search_buffer = 1,
+<p><strong>Note:</strong> If you only have one set of bounding boxes,
+you can omit <code>regional_bboxes</code> and the function will use
+<code>local_bboxes</code> for all measures:</p>
+<pre class="r"><code>test_results_single &lt;- compute_urbanicity_iterative(
+  local_bboxes = bbox_5km,
+  metrics = &quot;all&quot;,
   friction_surface_path  = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
-  population_raster_path = file.path(fp, &quot;pop_raster.tif&quot;),
-  nighttime_light_path   = file.path(fp, &quot;nighttime_lights.tif&quot;)
+  population_raster_paths = file.path(fp, &quot;worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif&quot;),
+  nighttime_light_paths   = file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2020_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;)
+)</code></pre>
+</div>
+<div id="multi-year-analysis" class="section level2">
+<h2>Multi-Year Analysis</h2>
+<p>To track urbanization trends over time, provide vectors of raster
+file paths for multiple years:</p>
+<pre class="r"><code># Define population raster paths (2015-2025)
+worldpop_files &lt;- c(
+  file.path(fp, &quot;worldpop/global_pop_2015_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2016_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2017_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2018_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2019_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2021_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2022_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2023_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2024_CN_1km_R2025A_UA_v1.tif&quot;),
+  file.path(fp, &quot;worldpop/global_pop_2025_CN_1km_R2025A_UA_v1.tif&quot;)
+)
+
+# Define nighttime light paths (2013-2024)
+nightlight_files &lt;- c(
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2013_global_vcmcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2014_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2015_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2016_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2017_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2018_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2019_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2020_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2021_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_v22_npp-j01_2022_global_vcmslcfg_c202303062300.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_npp_2023_global_vcmslcfg_v2_c202402081600.average_masked.dat.tif&quot;),
+  file.path(fp, &quot;viirs/extracted/VNL_npp_2024_global_vcmslcfg_v2_c202502261200.average_masked.dat.tif&quot;)
+)
+
+# Compute multi-year urbanicity metrics
+test_results_multiyear &lt;- compute_urbanicity_iterative(
+  local_bboxes = bbox_1km,
+  regional_bboxes = bbox_5km,
+  metrics = &quot;all&quot;,
+  search_buffer = 10,
+  friction_surface_path   = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
+  population_raster_paths = worldpop_files,
+  nighttime_light_paths   = nightlight_files,
+  verbose = FALSE
+)</code></pre>
+<p>Years are automatically extracted from the filenames (e.g.,
+<code>_2020_</code>), and the resulting columns are named: -
+<code>pop_density_2015</code>, <code>pop_density_2016</code>, …,
+<code>pop_density_2025</code> - <code>nighttime_light_2013</code>,
+<code>nighttime_light_2014</code>, …,
+<code>nighttime_light_2024</code></p>
+</div>
+<div id="subset-of-metrics" class="section level2">
+<h2>Subset of Metrics</h2>
+<p>You can also compute only selected metrics:</p>
+<pre class="r"><code>test_results_subset &lt;- compute_urbanicity_iterative(
+  local_bboxes = bbox_1km,
+  regional_bboxes = bbox_5km,
+  metrics = c(&quot;roads&quot;, &quot;shops&quot;, &quot;healthcare&quot;, &quot;schools&quot;, &quot;population&quot;, &quot;nighttime_light&quot;),
+  search_buffer = 1,
+  friction_surface_path   = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
+  population_raster_paths = worldpop_files,
+  nighttime_light_paths   = nightlight_files
 )</code></pre>
 <hr />
 </div>
+</div>
 <div id="visualize-results" class="section level1">
 <h1>Visualize Results</h1>
+<div id="summary-plots" class="section level2">
+<h2>Summary Plots</h2>
 <p>The <code>create_summary_plots()</code> function automatically
 generates summary plots for all numeric variables.</p>
-<pre class="r"><code>summary_plots_5km &lt;- create_summary_plots(test_results_5km)
+<pre class="r"><code>summary_plots &lt;- create_summary_plots(test_results_multiyear)
 
-# Example plots
-summary_plots_5km$pct_paved_roads
-summary_plots_5km$travel_time_healthcare_min
-summary_plots_5km$pop_density
-summary_plots_5km$nighttime_light</code></pre>
+# Example plots for infrastructure metrics
+summary_plots$pct_paved_roads
+summary_plots$travel_time_healthcare_min
+
+# Example plots for single-year time-varying metrics
+summary_plots$pop_density_2020
+summary_plots$nighttime_light_2020</code></pre>
+</div>
+<div id="temporal-trend-plots" class="section level2">
+<h2>Temporal Trend Plots</h2>
+<p>For multi-year data, use <code>create_temporal_plots()</code> to
+visualize changes over time:</p>
+<pre class="r"><code>temporal_plots &lt;- create_temporal_plots(test_results_multiyear)
+
+# View population density trends
+temporal_plots$pop_density
+
+# View nighttime light intensity trends
+temporal_plots$nighttime_light</code></pre>
+</div>
+<div id="all-plots-at-once" class="section level2">
+<h2>All Plots at Once</h2>
+<p>You can generate both summary and temporal plots simultaneously:</p>
+<pre class="r"><code>all_plots &lt;- create_all_plots(test_results_multiyear)
+
+# Access summary plots
+all_plots$summary_plots$pct_paved_roads
+all_plots$summary_plots$travel_time_healthcare_min
+
+# Access temporal plots
+all_plots$temporal_plots$pop_density
+all_plots$temporal_plots$nighttime_light</code></pre>
 <hr />
+</div>
 </div>
 <div id="output-interpretation" class="section level1">
 <h1>Output Interpretation</h1>
 <p>Each column in the resulting data frame corresponds to a specific
-urbanicity indicator, such as:</p>
+urbanicity indicator:</p>
+<div id="infrastructure-metrics-time-invariant" class="section level2">
+<h2>Infrastructure Metrics (Time-Invariant)</h2>
 <table>
 <colgroup>
 <col width="45%" />
@@ -1669,33 +1791,68 @@ urbanicity indicator, such as:</p>
 <td>Estimated walking time (min) to nearest school</td>
 </tr>
 <tr class="even">
+<td><code>travel_time_urban_center_min</code></td>
+<td>Estimated walking time (min) to nearest urban center</td>
+</tr>
+<tr class="odd">
 <td><code>n_shops</code></td>
 <td>Number of commercial points of interest</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>n_financial</code></td>
 <td>Number of financial institutions (ATMs, banks)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>n_transport_stops</code></td>
 <td>Number of public transport nodes</td>
 </tr>
+<tr class="even">
+<td><code>n_cell_towers</code></td>
+<td>Number of mobile phone cell towers</td>
+</tr>
 <tr class="odd">
 <td><code>building_density</code></td>
-<td>Proportion of built-up land area</td>
+<td>Proportion of built-up land area (%)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="time-varying-metrics-multi-year" class="section level2">
+<h2>Time-Varying Metrics (Multi-Year)</h2>
+<table>
+<colgroup>
+<col width="45%" />
+<col width="54%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>pop_density_YYYY</code></td>
+<td>Population density (per km²) for year YYYY</td>
 </tr>
 <tr class="even">
-<td><code>pop_density</code></td>
-<td>Average population per km²</td>
-</tr>
-<tr class="odd">
-<td><code>nighttime_light</code></td>
-<td>Mean nighttime light intensity</td>
+<td><code>nighttime_light_YYYY</code></td>
+<td>Mean nighttime light intensity for year YYYY</td>
 </tr>
 </tbody>
 </table>
 <p>These indicators can be aggregated or combined into composite indices
-of urbanicity.</p>
+of urbanicity, and the multi-year data enables longitudinal analysis of
+urbanization processes.</p>
+<hr />
+</div>
+</div>
+<div id="citation" class="section level1">
+<h1>Citation</h1>
+<p>If you use this package in your research, please cite:</p>
+<p>Barrett, T., Kolinski, L., Watowich, M., Lea, A., &amp; Martin, M.
+(2025). pecahnurbanicity: Tools for computing urbanicity metrics for
+anthropological field sites. R package version 0.2.0. <a href="https://github.com/tmbarrett2/pecahn-urbanicity" class="uri">https://github.com/tmbarrett2/pecahn-urbanicity</a></p>
 <hr />
 </div>
 

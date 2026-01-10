@@ -6,6 +6,7 @@
 \usage{
 compute_urbanicity(
   community_data,
+  regional_bbox = NULL,
   name = NULL,
   roads = TRUE,
   shops = TRUE,
@@ -20,13 +21,18 @@ compute_urbanicity(
   population = TRUE,
   search_buffer = 1,
   friction_surface_path = NULL,
-  population_raster_path = NULL,
-  nighttime_light_path = NULL,
+  friction_surface_global = NULL,
+  population_raster_paths = NULL,
+  nighttime_light_paths = NULL,
   verbose = FALSE
 )
 }
 \arguments{
-\item{community_data}{A list containing community metadata (\code{bbox}, \code{project}, \code{ethnicity}, \code{community}).}
+\item{community_data}{A list containing community metadata (\code{bbox}, \code{project}, \code{ethnicity}, \code{community}).
+This bbox is used as the local_bbox for population density, nighttime lights, and infrastructure counts.}
+
+\item{regional_bbox}{Optional list containing a larger bounding box for distance/travel time calculations.
+If NULL, uses the bbox from community_data for all measures.}
 
 \item{name}{Optional character string naming the community.}
 
@@ -36,32 +42,50 @@ compute_urbanicity(
 
 \item{friction_surface_path}{Path to the friction surface raster used for travel time calculations.}
 
-\item{population_raster_path}{Path to the population density raster (e.g., GPW).}
+\item{friction_surface_global}{Optional pre-loaded global friction surface raster. If provided, this will be used
+instead of loading from friction_surface_path. This parameter is typically used internally by
+\code{\link[=compute_urbanicity_iterative]{compute_urbanicity_iterative()}} to avoid reloading the same raster for multiple communities.}
 
-\item{nighttime_light_path}{Path to the nighttime light raster (e.g., VIIRS).}
+\item{population_raster_paths}{Character vector of paths to population density rasters (e.g., WorldPop) for multiple years.}
+
+\item{nighttime_light_paths}{Character vector of paths to nighttime light rasters (e.g., VIIRS) for multiple years.}
 
 \item{verbose}{Logical; if \code{TRUE}, prints progress messages (default = \code{FALSE}).}
 }
 \value{
 A one-row \code{data.frame} containing numeric and categorical urbanicity metrics for the specified community.
+Population density columns are named \code{pop_density_YYYY} and nighttime light columns are named \code{nighttime_light_YYYY}.
 }
 \description{
 Computes multiple geospatial and infrastructural indicators of urbanicity for a single community,
 including road access, facilities, travel times, building density, nighttime light intensity, and
 population density. The function uses OpenStreetMap data combined with raster-based surfaces for
-travel time and population estimates.
+travel time and population estimates. Supports multi-year analysis for population density (WorldPop)
+and nighttime lights (Earth Observation Group). Supports separate bounding boxes for local measures
+(population, infrastructure) and regional measures (travel times to facilities).
 }
 \details{
 Travel time calculations rely on \code{gdistance::costDistance()} and a precomputed transition matrix derived
 from the friction surface raster. OSM queries are automatically cached to minimize repeated downloads.
+Years are automatically extracted from raster filenames using the pattern \verb{_YYYY_}.
+
+The local_bbox (from community_data) is used for: population density, nighttime lights, building density,
+and counts of shops, financial services, transport stops, and cell towers.
+
+The regional_bbox is used for: travel time to healthcare, schools, paved roads, and urban centers.
 }
 \examples{
 \dontrun{
+# Create both local (1km) and regional (5km) bounding boxes
+bbox_1km <- create_bounding_boxes(test_data, distance_km = 1)
+bbox_5km <- create_bounding_boxes(test_data, distance_km = 5)
+
 results <- compute_urbanicity(
-  community_data = community_list[["Mandena"]],
+  community_data = bbox_1km[["Mandena"]],
+  regional_bbox = bbox_5km[["Mandena"]],
   friction_surface_path = "friction_surface_walking.geotiff",
-  population_raster_path = "pop_raster.tif",
-  nighttime_light_path = "nighttime_lights.tif"
+  population_raster_paths = c("worldpop_2015.tif", "worldpop_2020.tif"),
+  nighttime_light_paths = c("viirs_2015.tif", "viirs_2020.tif")
 )
 }
 

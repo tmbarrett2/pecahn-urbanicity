@@ -1,7 +1,7 @@
 Package: pecahnurbanicity
 Type: Package
 Title: Compute and Visualize Urbanicity Metrics for Anthropological Field Sites
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     c(
       person(given = "Tyler", family = "Barrett", email = "tyler.barrett@duke.edu",
@@ -12,13 +12,15 @@ Authors@R:
              role = "aut")
     )
 Description: Tools for computing geospatial and infrastructural measures of 
-    urbanicity using OpenStreetMap and raster datasets. Developed for the 
-    Population Ecology, Aging, and Health Network (PEcAHN).
+    urbanicity using OpenStreetMap and raster datasets. Supports multi-year 
+    analysis of population density (WorldPop) and nighttime light intensity 
+    (VIIRS/Earth Observation Group) to track urbanization trends over time. 
+    Developed for the Population Ecology, Aging, and Health Network (PEcAHN).
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Imports:
     methods,
     magrittr,
@@ -28,10 +30,8 @@ Imports:
     gdistance,
     digest,
     ggplot2,
-    dplyr
-Suggests:
-    knitr,
-    rmarkdown
+    dplyr,
+    tidyr
 Depends:
     R (>= 4.2.0)
-VignetteBuilder: knitr
+
