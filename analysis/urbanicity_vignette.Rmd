@@ -223,6 +223,55 @@ test_results_subset <- compute_urbanicity_iterative(
 )
 ```
 
+## Large datasets (>5 locations)
+If computing urbanicity metrics on a dataset containing information for many communities (e.g., >5 locations), it may be advisable to run the `compute_urbanicity_iterative()` function within a `for` loop to batch 5 communities at a time. This may help to avoid timeout issues related to accessing OSM data.
+
+```r
+# Example `for` loop for computing urbanicity metrics on dataset containing locations for many (e.g., >5) communities
+
+# Create local bounding boxes for community-level measures
+bbox_1km <- create_bounding_boxes(test_data_single_point, distance_km = 1)
+
+# Create regional bounding boxes for distance searches
+bbox_5km <- create_bounding_boxes(test_data_single_point, distance_km = 5)
+
+# Count number of communities 
+n <- length(bbox_1km)
+
+# Create empty list object to store generated data
+results_list <- list()
+
+# Run `for` loop to process 5 communities at a time, storing generated dataframes within the `results_list` object. Dataframes will be named according to the community numbers they contain (e.g., 1_5, 6_10, etc.):
+
+for (start_idx in seq(1, n, by = 5)) {
+  
+  end_idx <- min(start_idx + 4, n)
+  idx_range <- start_idx:end_idx 
+  
+  message("Processing communities ", start_idx, " to ", end_idx)
+  
+  # Run urbanicity computation
+  res <- compute_urbanicity_iterative(
+    local_bboxes        = bbox_1km[idx_range],
+    regional_bboxes     = bbox_5km[idx_range],
+    metrics             = "all",
+    search_buffer       = 10,
+    friction_surface_path   = file.path(fp, "friction_surface_walking.geotiff"),
+    population_raster_paths = file.path(fp, "worldpop/global_pop_2024_CN_1km_R2025A_UA_v1.tif"),
+    nighttime_light_paths   = file.path(fp, "viirs/VNL_npp_2024_global_vcmslcfg_v2_c202502261200.average_masked.dat.tif"),
+    verbose = TRUE
+  )
+  
+  # Store results
+  results_list[[paste0(start_idx, "_", end_idx)]] <- res
+}
+
+# To merge batched dataframes into a single combined dataframe:
+
+combined_df <- dplyr::bind_rows(results_list, .id = "batch")
+
+```
+
 ------------------------------------------------------------------------
 
 # Visualize Results

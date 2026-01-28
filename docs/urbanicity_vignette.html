@@ -11,7 +11,7 @@
 
 <meta name="author" content="Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda Lea, and Melanie Martin" />
 
-<meta name="date" content="2026-01-10" />
+<meta name="date" content="2026-01-28" />
 
 <title>Urbanicity Index for Anthropological Field Sites</title>
 
@@ -1501,7 +1501,7 @@ border-radius: 0px;
 Sites</h1>
 <h4 class="author">Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda
 Lea, and Melanie Martin</h4>
-<h4 class="date">2026-01-10</h4>
+<h4 class="date">2026-01-28</h4>
 
 </div>
 
@@ -1714,6 +1714,57 @@ test_results_multiyear &lt;- compute_urbanicity_iterative(
   population_raster_paths = worldpop_files,
   nighttime_light_paths   = nightlight_files
 )</code></pre>
+</div>
+<div id="large-datasets-5-locations" class="section level2">
+<h2>Large datasets (&gt;5 locations)</h2>
+<p>If computing urbanicity metrics on a dataset containing information
+for many communities (e.g., &gt;5 locations), it may be advisable to run
+the <code>compute_urbanicity_iterative()</code> function within a
+<code>for</code> loop to batch 5 communities at a time. This may help to
+avoid timeout issues related to accessing OSM data.</p>
+<pre class="r"><code># Example `for` loop for computing urbanicity metrics on dataset containing locations for many (e.g., &gt;5) communities
+
+# Create local bounding boxes for community-level measures
+bbox_1km &lt;- create_bounding_boxes(test_data_single_point, distance_km = 1)
+
+# Create regional bounding boxes for distance searches
+bbox_5km &lt;- create_bounding_boxes(test_data_single_point, distance_km = 5)
+
+# Count number of communities 
+n &lt;- length(bbox_1km)
+
+# Create empty list object to store generated data
+results_list &lt;- list()
+
+# Run `for` loop to process 5 communities at a time, storing generated dataframes within the `results_list` object. Dataframes will be named according to the community numbers they contain (e.g., 1_5, 6_10, etc.):
+
+for (start_idx in seq(1, n, by = 5)) {
+  
+  end_idx &lt;- min(start_idx + 4, n)
+  idx_range &lt;- start_idx:end_idx 
+  
+  message(&quot;Processing communities &quot;, start_idx, &quot; to &quot;, end_idx)
+  
+  # Run urbanicity computation
+  res &lt;- compute_urbanicity_iterative(
+    local_bboxes        = bbox_1km[idx_range],
+    regional_bboxes     = bbox_5km[idx_range],
+    metrics             = &quot;all&quot;,
+    search_buffer       = 10,
+    friction_surface_path   = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
+    population_raster_paths = file.path(fp, &quot;worldpop/global_pop_2024_CN_1km_R2025A_UA_v1.tif&quot;),
+    nighttime_light_paths   = file.path(fp, &quot;viirs/VNL_npp_2024_global_vcmslcfg_v2_c202502261200.average_masked.dat.tif&quot;),
+    verbose = TRUE
+  )
+  
+  # Store results
+  results_list[[paste0(start_idx, &quot;_&quot;, end_idx)]] &lt;- res
+}
+
+# To merge batched dataframes into a single combined dataframe:
+
+combined_df &lt;- dplyr::bind_rows(results_list, .id = &quot;batch&quot;)
+</code></pre>
 <hr />
 </div>
 </div>
