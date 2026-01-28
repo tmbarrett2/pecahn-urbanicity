@@ -223,7 +223,7 @@ test_results_subset <- compute_urbanicity_iterative(
 )
 ```
 
-## Large Datasets (>5 :ocations)
+## Large Datasets (>5 Locations)
 If computing urbanicity metrics on a dataset containing information for many communities (e.g., >5 locations), it may be advisable to run the `compute_urbanicity_iterative()` function within a `for` loop to batch 5 communities at a time. This may help to avoid timeout issues related to accessing OSM data.
 
 ```r
