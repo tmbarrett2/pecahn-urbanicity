@@ -3,7 +3,7 @@
 #' @description
 #' Computes a composite urbanicity index across a set of core features using
 #' either z-score standardization or min-max normalization. The composite is
-#' always computed as the row-wise mean of standardized feature values.
+#' always computed as the row-wise mean of standardized  feature values.
 #' Travel time variables are reverse-coded so that higher scores
 #' consistently reflect greater urbanicity (i.e., shorter travel times = higher
 #' score). Multi-year variables (nighttime light, population density) are
