@@ -7,8 +7,8 @@
 compute_urbanicity_composite_index(
   data,
   features = c("pct_paved_roads", "paved_to_unpaved_ratio", "travel_time_paved_road_min",
-    "travel_time_healthcare_min", "travel_time_school_min",
-    "travel_time_urban_center_min", "nighttime_light", "pop_density"),
+    "travel_time_hospital_min", "travel_time_school_min", "travel_time_urban_center_min",
+    "nighttime_light", "pop_density"),
   method = c("zscore", "minmax"),
   min_features = 6L,
   cor_warning = TRUE,
@@ -93,7 +93,7 @@ Core features included in the composite:
 \item \code{pct_paved_roads} -- percent of roads that are paved (higher = more urban)
 \item \code{paved_to_unpaved_ratio} -- ratio of paved to unpaved road (higher = more urban)
 \item \code{travel_time_paved_road_min} -- travel time to nearest paved road (lower = more urban)
-\item \code{travel_time_healthcare_min} -- travel time to nearest healthcare facility (lower = more urban)
+\item \code{travel_time_hospital_min} -- travel time to nearest hospital (lower = more urban)
 \item \code{travel_time_school_min} -- travel time to nearest school (lower = more urban)
 \item \code{travel_time_urban_center_min} -- travel time to nearest urban center (lower = more urban)
 \item \code{nighttime_light} -- mean nighttime light intensity, averaged across years if multiple years are included (higher = more urban)

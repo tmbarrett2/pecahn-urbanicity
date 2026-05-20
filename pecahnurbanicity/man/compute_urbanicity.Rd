@@ -10,7 +10,7 @@ compute_urbanicity(
   name = NULL,
   roads = TRUE,
   shops = TRUE,
-  healthcare = TRUE,
+  hospital = TRUE,
   transport = TRUE,
   financial = TRUE,
   schools = TRUE,
@@ -36,7 +36,7 @@ If NULL, uses the bbox from community_data for all measures.}
 
 \item{name}{Optional character string naming the community.}
 
-\item{roads, shops, healthcare, transport, financial, schools, urban_center, cell_towers, buildings, nighttime_light, population}{Logical flags controlling which metrics are computed.}
+\item{roads, shops, hospital, transport, financial, schools, urban_center, cell_towers, buildings, nighttime_light, population}{Logical flags controlling which metrics are computed.}
 
 \item{search_buffer}{Numeric; degrees to expand the bounding box when cropping friction surfaces (default = 1).}
 
@@ -72,7 +72,7 @@ Years are automatically extracted from raster filenames using the pattern \verb{
 The local_bbox (from community_data) is used for: population density, nighttime lights, building density,
 and counts of shops, financial services, transport stops, and cell towers.
 
-The regional_bbox is used for: travel time to healthcare, schools, paved roads, and urban centers.
+The regional_bbox is used for: travel time to hospital, schools, paved roads, and urban centers.
 }
 \examples{
 \dontrun{

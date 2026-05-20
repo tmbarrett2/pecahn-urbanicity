@@ -50,7 +50,7 @@ Years are automatically extracted from raster filenames using the pattern \verb{
 The local bounding box (communities_list) is used for: population density, nighttime lights, building density,
 and counts of shops, financial services, transport stops, and cell towers.
 
-The regional bounding box (regional_communities_list) is used for: travel time to healthcare, schools,
+The regional bounding box (regional_communities_list) is used for: travel time to hospital, schools,
 paved roads, and urban centers.
 }
 \examples{

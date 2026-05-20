@@ -2,7 +2,7 @@
 % Please edit documentation in R/search_facilities_progressive.R
 \name{search_facilities_progressive}
 \alias{search_facilities_progressive}
-\title{Progressively search for facilities (roads, schools, healthcare)}
+\title{Progressively search for facilities (roads, schools, hospitals, etc.)}
 \usage{
 search_facilities_progressive(
   center_point,
@@ -20,7 +20,7 @@ search_facilities_progressive(
 
 \item{bbox}{Numeric vector defining the initial bounding box (\code{c(left, bottom, right, top)}).}
 
-\item{facility_type}{Character string; one of \code{"paved_road"}, \code{"healthcare"}, or \code{"school"}.}
+\item{facility_type}{Character string; one of \code{"paved_road"}, \code{"hospital"}, or \code{"school"}.}
 
 \item{friction_extent}{Optional \code{raster::extent} defining the spatial coverage of the friction raster.}
 
