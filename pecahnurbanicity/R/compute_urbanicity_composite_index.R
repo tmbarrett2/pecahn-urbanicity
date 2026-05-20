@@ -13,7 +13,7 @@
 #' - `pct_paved_roads` -- percent of roads that are paved (higher = more urban)
 #' - `paved_to_unpaved_ratio` -- ratio of paved to unpaved road (higher = more urban)
 #' - `travel_time_paved_road_min` -- travel time to nearest paved road (lower = more urban)
-#' - `travel_time_healthcare_min` -- travel time to nearest healthcare facility (lower = more urban)
+#' - `travel_time_hospital_min` -- travel time to nearest hospital (lower = more urban)
 #' - `travel_time_school_min` -- travel time to nearest school (lower = more urban)
 #' - `travel_time_urban_center_min` -- travel time to nearest urban center (lower = more urban)
 #' - `nighttime_light` -- mean nighttime light intensity, averaged across years if multiple years are included (higher = more urban)
@@ -129,7 +129,7 @@ compute_urbanicity_composite_index <- function(data,
                                   "pct_paved_roads",
                                   "paved_to_unpaved_ratio",
                                   "travel_time_paved_road_min",
-                                  "travel_time_healthcare_min",
+                                  "travel_time_hospital_min",
                                   "travel_time_school_min",
                                   "travel_time_urban_center_min",
                                   "nighttime_light",
@@ -159,7 +159,7 @@ compute_urbanicity_composite_index <- function(data,
 
   reverse_vars    <- c(
     "travel_time_paved_road_min",
-    "travel_time_healthcare_min",
+    "travel_time_hospital_min",
     "travel_time_school_min",
     "travel_time_urban_center_min"
   )

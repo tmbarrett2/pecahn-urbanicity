@@ -13,7 +13,7 @@
 #' @param regional_bbox Optional list containing a larger bounding box for distance/travel time calculations.
 #'   If NULL, uses the bbox from community_data for all measures.
 #' @param name Optional character string naming the community.
-#' @param roads,shops,healthcare,transport,financial,schools,urban_center,cell_towers,buildings,nighttime_light,population Logical flags controlling which metrics are computed.
+#' @param roads,shops,hospital,transport,financial,schools,urban_center,cell_towers,buildings,nighttime_light,population Logical flags controlling which metrics are computed.
 #' @param search_buffer Numeric; degrees to expand the bounding box when cropping friction surfaces (default = 1).
 #' @param friction_surface_path Path to the friction surface raster used for travel time calculations.
 #' @param friction_surface_global Optional pre-loaded global friction surface raster. If provided, this will be used
@@ -35,7 +35,7 @@
 #' The local_bbox (from community_data) is used for: population density, nighttime lights, building density,
 #' and counts of shops, financial services, transport stops, and cell towers.
 #' 
-#' The regional_bbox is used for: travel time to healthcare, schools, paved roads, and urban centers.
+#' The regional_bbox is used for: travel time to hospital, schools, paved roads, and urban centers.
 #'
 #' @examples
 #' \dontrun{
@@ -63,7 +63,7 @@ compute_urbanicity <- function(community_data,
                                name = NULL,
                                roads = TRUE,
                                shops = TRUE,
-                               healthcare = TRUE,
+                               hospital = TRUE,
                                transport = TRUE,
                                financial = TRUE,
                                schools = TRUE,
@@ -141,7 +141,7 @@ compute_urbanicity <- function(community_data,
   tr_corrected <- NULL
   raster_crs <- NULL
   
-  if (healthcare || schools || roads || urban_center) {
+  if (hospital || schools || roads || urban_center) {
     tryCatch({
       if (verbose) cat("  Loading friction surface data...\n")
       
@@ -255,14 +255,14 @@ compute_urbanicity <- function(community_data,
     }, error = function(e) { if (verbose) cat("  Error processing transport infrastructure:", e$message, "\n"); results$n_transport_stops <- NA })
   }
   
-  # Healthcare - uses regional bbox for search
-  if (healthcare) {
+  # hospital - uses regional bbox for search
+  if (hospital) {
     tryCatch({
-      if (verbose) cat("  Analyzing healthcare facilities...\n")
-      results$travel_time_healthcare_min <- search_facilities_progressive(
-        center_point, regional_bbox_use, "healthcare", tr_corrected = tr_corrected, raster_crs = raster_crs, max_search_multiplier = 50
+      if (verbose) cat("  Analyzing hospitals...\n")
+      results$travel_time_hospital_min <- search_facilities_progressive(
+        center_point, regional_bbox_use, "hospital", tr_corrected = tr_corrected, raster_crs = raster_crs, max_search_multiplier = 50
       )
-    }, error = function(e) { if (verbose) cat("  Error processing healthcare facilities:", e$message, "\n"); results$travel_time_healthcare_min <- NA })
+    }, error = function(e) { if (verbose) cat("  Error processing hospitals:", e$message, "\n"); results$travel_time_hospital_min <- NA })
   }
   
   # Financial - uses local bbox

@@ -27,7 +27,7 @@
 #' The local bounding box (communities_list) is used for: population density, nighttime lights, building density,
 #' and counts of shops, financial services, transport stops, and cell towers.
 #' 
-#' The regional bounding box (regional_communities_list) is used for: travel time to healthcare, schools, 
+#' The regional bounding box (regional_communities_list) is used for: travel time to hospital, schools, 
 #' paved roads, and urban centers.
 #'
 #' @examples
@@ -66,13 +66,13 @@ compute_urbanicity_iterative <- function(local_bboxes,
   
   # Determine which metrics to compute
   if (identical(metrics, "all") || "all" %in% metrics) {
-    do_roads <- do_shops <- do_healthcare <- do_transport <- do_financial <- TRUE
+    do_roads <- do_shops <- do_hospital <- do_transport <- do_financial <- TRUE
     do_schools <- do_urban_center <- do_cell_towers <- do_buildings <- TRUE
     do_nighttime_light <- do_population <- TRUE
   } else {
     do_roads           <- "roads"           %in% metrics
     do_shops           <- "shops"           %in% metrics
-    do_healthcare      <- "healthcare"      %in% metrics
+    do_hospital      <- "hospital"      %in% metrics
     do_transport       <- "transport"       %in% metrics
     do_financial       <- "financial"       %in% metrics
     do_schools         <- "schools"         %in% metrics
@@ -85,7 +85,7 @@ compute_urbanicity_iterative <- function(local_bboxes,
   
   # Load friction surface once if needed for distance calculations
   friction_global <- NULL
-  if ((do_healthcare || do_schools || do_roads || do_urban_center) && 
+  if ((do_hospital || do_schools || do_roads || do_urban_center) && 
       !is.null(friction_surface_path) && file.exists(friction_surface_path)) {
     if (verbose) cat("Loading global friction surface (one-time load)...\n")
     friction_global <- raster::raster(friction_surface_path)
@@ -112,7 +112,7 @@ compute_urbanicity_iterative <- function(local_bboxes,
       name = names(local_bboxes)[i],
       roads = do_roads,
       shops = do_shops,
-      healthcare = do_healthcare,
+      hospital = do_hospital,
       transport = do_transport,
       financial = do_financial,
       schools = do_schools,

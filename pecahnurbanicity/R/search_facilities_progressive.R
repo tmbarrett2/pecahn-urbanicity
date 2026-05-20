@@ -1,4 +1,4 @@
-#' Progressively search for facilities (roads, schools, healthcare)
+#' Progressively search for facilities (roads, schools, hospitals, etc.)
 #'
 #' @description
 #' Expands the bounding box around a community incrementally until at least one facility of the specified type
@@ -6,7 +6,7 @@
 #'
 #' @param center_point An `sf` point (WGS84) representing the community center.
 #' @param bbox Numeric vector defining the initial bounding box (`c(left, bottom, right, top)`).
-#' @param facility_type Character string; one of `"paved_road"`, `"healthcare"`, or `"school"`.
+#' @param facility_type Character string; one of `"paved_road"`, `"hospital"`, or `"school"`.
 #' @param friction_extent Optional `raster::extent` defining the spatial coverage of the friction raster.
 #' @param tr_corrected Optional `gdistance` TransitionLayer (geo-corrected) for travel time computation.
 #' @param raster_crs CRS of the friction raster.
@@ -63,9 +63,9 @@ search_facilities_progressive <- function(center_point, bbox, facility_type,
         paved_roads <- roads_sf[!is.na(roads_sf$surface) & roads_sf$surface %in% paved_surfaces, ]
         if (nrow(paved_roads) > 0) found_facilities <- paved_roads
       }
-    } else if (facility_type == "healthcare") {
+    } else if (facility_type == "hospital") {
       health_data <- get_osm_data_cached(search_bbox, key = "amenity",
-                                         value = c("hospital", "clinic", "doctors"))
+                                         value = "hospital")
       if (!is.null(health_data$osm_points) && nrow(health_data$osm_points) > 0) {
         found_facilities <- health_data$osm_points
       }
