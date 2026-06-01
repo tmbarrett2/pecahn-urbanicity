@@ -11,8 +11,6 @@
 #'
 #' Core features included in the composite:
 #' - `pct_paved_roads` -- percent of roads that are paved (higher = more urban)
-#' - `paved_to_unpaved_ratio` -- ratio of paved to unpaved road (higher = more urban)
-#' - `travel_time_paved_road_min` -- travel time to nearest paved road (lower = more urban)
 #' - `travel_time_hospital_min` -- travel time to nearest hospital (lower = more urban)
 #' - `travel_time_school_min` -- travel time to nearest school (lower = more urban)
 #' - `travel_time_urban_center_min` -- travel time to nearest urban center (lower = more urban)
@@ -25,7 +23,7 @@
 #'   Multi-year columns (e.g., `nighttime_light_2015`, `pop_density_2020`) are
 #'   automatically detected and averaged prior to standardization.
 #' @param features Optional character vector of column name stubs to include in
-#'   the composite. Defaults to all eight core features. Use stubs (e.g.,
+#'   the composite. Defaults to all six core features. Use stubs (e.g.,
 #'   `"nighttime_light"`) for multi-year variables -- all matching yearly columns
 #'   will be averaged automatically.
 #' @param method Character string specifying the standardization method.
@@ -127,8 +125,6 @@
 compute_urbanicity_composite_index <- function(data,
                                 features = c(
                                   "pct_paved_roads",
-                                  "paved_to_unpaved_ratio",
-                                  "travel_time_paved_road_min",
                                   "travel_time_hospital_min",
                                   "travel_time_school_min",
                                   "travel_time_urban_center_min",

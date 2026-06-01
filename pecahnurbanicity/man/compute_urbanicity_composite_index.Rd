@@ -6,9 +6,8 @@
 \usage{
 compute_urbanicity_composite_index(
   data,
-  features = c("pct_paved_roads", "paved_to_unpaved_ratio", "travel_time_paved_road_min",
-    "travel_time_hospital_min", "travel_time_school_min", "travel_time_urban_center_min",
-    "nighttime_light", "pop_density"),
+  features = c("pct_paved_roads", "travel_time_hospital_min", "travel_time_school_min",
+    "travel_time_urban_center_min", "nighttime_light", "pop_density"),
   method = c("zscore", "minmax"),
   min_features = 6L,
   cor_warning = TRUE,
@@ -26,7 +25,7 @@ Multi-year columns (e.g., \code{nighttime_light_2015}, \code{pop_density_2020}) 
 automatically detected and averaged prior to standardization.}
 
 \item{features}{Optional character vector of column name stubs to include in
-the composite. Defaults to all eight core features. Use stubs (e.g.,
+the composite. Defaults to all six core features. Use stubs (e.g.,
 \code{"nighttime_light"}) for multi-year variables -- all matching yearly columns
 will be averaged automatically.}
 
@@ -91,8 +90,6 @@ averaged across available years before standardization when applicable.
 Core features included in the composite:
 \itemize{
 \item \code{pct_paved_roads} -- percent of roads that are paved (higher = more urban)
-\item \code{paved_to_unpaved_ratio} -- ratio of paved to unpaved road (higher = more urban)
-\item \code{travel_time_paved_road_min} -- travel time to nearest paved road (lower = more urban)
 \item \code{travel_time_hospital_min} -- travel time to nearest hospital (lower = more urban)
 \item \code{travel_time_school_min} -- travel time to nearest school (lower = more urban)
 \item \code{travel_time_urban_center_min} -- travel time to nearest urban center (lower = more urban)
