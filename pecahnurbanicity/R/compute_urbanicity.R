@@ -14,24 +14,41 @@
 #'   If NULL, uses the bbox from community_data for all measures.
 #' @param name Optional character string naming the community.
 #' @param roads,shops,hospital,transport,financial,schools,urban_center,cell_towers,buildings,nighttime_light,population Logical flags controlling which metrics are computed.
-#' @param search_buffer Numeric; degrees to expand the bounding box when cropping friction surfaces (default = 1).
-#' @param friction_surface_path Path to the friction surface raster used for travel time calculations.
-#' @param friction_surface_global Optional pre-loaded global friction surface raster. If provided, this will be used
-#'   instead of loading from friction_surface_path. This parameter is typically used internally by
-#'   [compute_urbanicity_iterative()] to avoid reloading the same raster for multiple communities.
-#' @param population_raster_paths Character vector of paths to population density rasters (e.g., WorldPop) for multiple years.
-#' @param nighttime_light_paths Character vector of paths to nighttime light rasters (e.g., VIIRS) for multiple years.
+#' @param search_buffer Numeric; degrees to expand the bounding box when fetching/cropping the friction surface (default = 1).
+#' @param ee_project Optional character; the Google Cloud project passed to `rgee::ee_Initialize()`. Earth Engine is
+#'   initialized automatically on first use; supply this if you have not already initialized Earth Engine in your
+#'   session and have no default project configured.
+#' @param population_years Integer vector of years for which to compute population density from WorldPop
+#'   (e.g., `c(2015, 2020)`). If `NULL`, population density is skipped.
+#' @param nighttime_light_years Integer vector of years for which to compute mean nighttime light from VIIRS.
+#'   If `NULL`, nighttime light is skipped.
+#' @param friction_asset,population_asset,nighttime_light_asset Optional character overrides for the Earth Engine
+#'   asset IDs (friction surface, WorldPop population, VIIRS nighttime lights). Leave `NULL` to use the package defaults.
+#' @param urban_center_codes Integer vector of GHS-SMOD `smod_code` values defining an "urban center" for the
+#'   nearest-urban-center travel time. Defaults to `c(23, 30)` (Dense Urban Cluster + Urban Center); use `30`
+#'   for strict Urban Center only.
+#' @param ghsl_year Integer; GHS-SMOD epoch used for the urban-center search (5-year epochs 1975-2030,
+#'   default = 2020). Non-epoch years are snapped to the nearest available epoch.
 #' @param verbose Logical; if `TRUE`, prints progress messages (default = `FALSE`).
 #'
 #' @return
 #' A one-row `data.frame` containing numeric and categorical urbanicity metrics for the specified community.
 #' Population density columns are named `pop_density_YYYY` and nighttime light columns are named `nighttime_light_YYYY`.
+#' Each travel-time distance measure (`travel_time_paved_road_min`, `travel_time_hospital_min`,
+#' `travel_time_school_min`, `travel_time_urban_center_min`) has a companion logical flag column
+#' (`*_is_boundary_est`) that is `TRUE` when no feature was found within the maximum search area and a
+#' boundary-distance estimate was returned, and `FALSE` when a real feature was used.
 #'
 #' @details
+#' Raster data (friction surface, population, nighttime lights) is retrieved from Google Earth Engine via
+#' `rgee`; Earth Engine must be authenticated beforehand (see `rgee::ee_install()` / `rgee::ee_Initialize()`).
 #' Travel time calculations rely on `gdistance::costDistance()` and a precomputed transition matrix derived
-#' from the friction surface raster. OSM queries are automatically cached to minimize repeated downloads.
-#' Years are automatically extracted from raster filenames using the pattern `_YYYY_`.
-#' 
+#' from the Earth Engine friction surface. OSM queries and Earth Engine results are cached locally to minimize
+#' repeated downloads (OSM in `osm_cache/`, Earth Engine results in `gee_cache/`, keyed on a digest of the
+#' bounding box, asset ID, and year). Population and nighttime-light years are taken from `population_years`
+#' and `nighttime_light_years`. The nearest urban center is derived from the GHSL Degree-of-Urbanisation
+#' layer (GHS-SMOD) rather than OpenStreetMap.
+#'
 #' The local_bbox (from community_data) is used for: population density, nighttime lights, building density,
 #' and counts of shops, financial services, transport stops, and cell towers.
 #' 
@@ -39,24 +56,25 @@
 #'
 #' @examples
 #' \dontrun{
+#' # Earth Engine must be authenticated first: rgee::ee_Initialize()
+#'
 #' # Create both local (1km) and regional (5km) bounding boxes
 #' bbox_1km <- create_bounding_boxes(test_data, distance_km = 1)
 #' bbox_5km <- create_bounding_boxes(test_data, distance_km = 5)
-#' 
+#'
 #' results <- compute_urbanicity(
 #'   community_data = bbox_1km[["Mandena"]],
 #'   regional_bbox = bbox_5km[["Mandena"]],
-#'   friction_surface_path = "friction_surface_walking.geotiff",
-#'   population_raster_paths = c("worldpop_2015.tif", "worldpop_2020.tif"),
-#'   nighttime_light_paths = c("viirs_2015.tif", "viirs_2020.tif")
+#'   ee_project = "my-gcp-project",
+#'   population_years = c(2015, 2020),
+#'   nighttime_light_years = c(2015, 2020)
 #' )
 #' }
 #'
 #' @importFrom sf st_polygon st_sfc st_point st_crs st_transform st_area st_sf
-#' @importFrom raster raster extent crop crs extract projectRaster
+#' @importFrom raster crs
 #' @importFrom gdistance transition geoCorrection
 #' @importFrom stats aggregate
-#' @importFrom methods as
 #' @export
 compute_urbanicity <- function(community_data, 
                                regional_bbox = NULL,
@@ -73,26 +91,39 @@ compute_urbanicity <- function(community_data,
                                nighttime_light = TRUE,
                                population = TRUE,
                                search_buffer = 1,  # degrees (~100km)
-                               friction_surface_path = NULL,
-                               friction_surface_global = NULL,  # NEW: pre-loaded global raster
-                               population_raster_paths = NULL,
-                               nighttime_light_paths = NULL,
+                               ee_project = NULL,
+                               population_years = NULL,
+                               nighttime_light_years = NULL,
+                               friction_asset = NULL,
+                               population_asset = NULL,
+                               nighttime_light_asset = NULL,
+                               urban_center_codes = c(23, 30),
+                               ghsl_year = 2020,
                                verbose = FALSE) {
-  
+
   # Redirect output if not verbose
   if (!verbose) {
     sink(tempfile())
     on.exit(sink(), add = TRUE)
   }
-  
+
   # Ensure required packages are installed
-  required_packages <- c("osmdata", "sf", "raster", "gdistance", "httr", "terra", "digest")
+  required_packages <- c("osmdata", "sf", "raster", "gdistance", "rgee", "digest")
   for (pkg in required_packages) {
     if (!requireNamespace(pkg, quietly = TRUE)) {
       stop(paste("Package", pkg, "needed for compute_urbanicity()."))
     }
   }
-  
+
+  # Determine whether any Earth Engine data is required, and initialize once.
+  need_friction <- hospital || schools || roads || urban_center
+  need_ee <- need_friction ||
+    (population && !is.null(population_years)) ||
+    (nighttime_light && !is.null(nighttime_light_years))
+  if (need_ee) {
+    .ee_ensure_init(ee_project)
+  }
+
   # Extract local bounding box (for population, nighttime light, infrastructure)
   local_bbox <- community_data$bbox
   
@@ -141,28 +172,18 @@ compute_urbanicity <- function(community_data,
   tr_corrected <- NULL
   raster_crs <- NULL
   
-  if (hospital || schools || roads || urban_center) {
+  if (need_friction) {
     tryCatch({
-      if (verbose) cat("  Loading friction surface data...\n")
-      
-      # Use pre-loaded global raster if provided, otherwise load it
-      if (!is.null(friction_surface_global)) {
-        friction_global <- friction_surface_global
-        if (verbose) cat("  Using pre-loaded friction surface\n")
-      } else if (!is.null(friction_surface_path) && file.exists(friction_surface_path)) {
-        friction_global <- raster::raster(friction_surface_path)
-        if (verbose) cat("  Loaded friction surface from file\n")
-      } else {
-        stop("Local friction surface file required but not found.")
-      }
-      
-      extent_buffered <- raster::extent(
-        regional_bbox_use["left"] - search_buffer,
-        regional_bbox_use["right"] + search_buffer,
-        regional_bbox_use["bottom"] - search_buffer,
-        regional_bbox_use["top"] + search_buffer
+      if (verbose) cat("  Fetching friction surface from Earth Engine...\n")
+
+      # Fetch the walking-only friction surface, clipped on the Earth Engine
+      # side to the regional bbox + search buffer. Results are cached per bbox
+      # in gee_cache/, so repeated/identical extents are not re-downloaded.
+      friction_raster <- ee_get_friction_raster(
+        bbox       = regional_bbox_use,
+        buffer_deg = search_buffer,
+        asset      = friction_asset
       )
-      friction_raster <- raster::crop(friction_global, extent_buffered)
       raster_crs <- raster::crs(friction_raster)
       tr <- gdistance::transition(friction_raster, function(x) 1 / mean(x), directions = 8)
       tr_corrected <- gdistance::geoCorrection(tr, type = "c")
@@ -210,23 +231,29 @@ compute_urbanicity <- function(community_data,
         if (nrow(paved_roads) > 0 && !is.null(tr_corrected)) {
           paved_points <- suppressWarnings(sf::st_cast(sf::st_geometry(paved_roads), "POINT") |> sf::st_sf())
           results$travel_time_paved_road_min <- calculate_travel_time(center_point, paved_points, tr_corrected, raster_crs)
+          results$travel_time_paved_road_is_boundary_est <- FALSE
         } else {
-          results$travel_time_paved_road_min <- search_facilities_progressive(
+          pr <- search_facilities_progressive(
             center_point, regional_bbox_use, "paved_road", tr_corrected = tr_corrected, raster_crs = raster_crs, max_search_multiplier = 20
           )
+          results$travel_time_paved_road_min <- pr$value
+          results$travel_time_paved_road_is_boundary_est <- pr$is_boundary_est
         }
       } else {
         results$paved_to_unpaved_ratio <- NA
         results$pct_paved_roads <- NA
-        results$travel_time_paved_road_min <- search_facilities_progressive(
+        pr <- search_facilities_progressive(
           center_point, regional_bbox_use, "paved_road", tr_corrected = tr_corrected, raster_crs = raster_crs, max_search_multiplier = 20
         )
+        results$travel_time_paved_road_min <- pr$value
+        results$travel_time_paved_road_is_boundary_est <- pr$is_boundary_est
       }
     }, error = function(e) {
       if (verbose) cat("  Error processing roads:", e$message, "\n")
       results$paved_to_unpaved_ratio <- NA
       results$pct_paved_roads <- NA
       results$travel_time_paved_road_min <- NA
+      results$travel_time_paved_road_is_boundary_est <- NA
     })
   }
   
@@ -259,10 +286,12 @@ compute_urbanicity <- function(community_data,
   if (hospital) {
     tryCatch({
       if (verbose) cat("  Analyzing hospitals...\n")
-      results$travel_time_hospital_min <- search_facilities_progressive(
+      hp <- search_facilities_progressive(
         center_point, regional_bbox_use, "hospital", tr_corrected = tr_corrected, raster_crs = raster_crs, max_search_multiplier = 50
       )
-    }, error = function(e) { if (verbose) cat("  Error processing hospitals:", e$message, "\n"); results$travel_time_hospital_min <- NA })
+      results$travel_time_hospital_min <- hp$value
+      results$travel_time_hospital_is_boundary_est <- hp$is_boundary_est
+    }, error = function(e) { if (verbose) cat("  Error processing hospitals:", e$message, "\n"); results$travel_time_hospital_min <- NA; results$travel_time_hospital_is_boundary_est <- NA })
   }
   
   # Financial - uses local bbox
@@ -278,20 +307,25 @@ compute_urbanicity <- function(community_data,
   if (schools) {
     tryCatch({
       if (verbose) cat("  Analyzing schools...\n")
-      results$travel_time_school_min <- search_facilities_progressive(
+      sc <- search_facilities_progressive(
         center_point, regional_bbox_use, "school", tr_corrected = tr_corrected, raster_crs = raster_crs, max_search_multiplier = 50
       )
-    }, error = function(e) { if (verbose) cat("  Error processing schools:", e$message, "\n"); results$travel_time_school_min <- NA })
+      results$travel_time_school_min <- sc$value
+      results$travel_time_school_is_boundary_est <- sc$is_boundary_est
+    }, error = function(e) { if (verbose) cat("  Error processing schools:", e$message, "\n"); results$travel_time_school_min <- NA; results$travel_time_school_is_boundary_est <- NA })
   }
   
-  # Urban centers - uses regional bbox for search
+  # Urban centers - uses regional bbox for search (GHS-SMOD via Earth Engine)
   if (urban_center) {
     tryCatch({
-      if (verbose) cat("  Analyzing travel time to nearest urban center (place = city)...\n")
-      results$travel_time_urban_center_min <- search_urban_center_progressive(
-        center_point, regional_bbox_use, tr_corrected = tr_corrected, raster_crs = raster_crs, max_search_multiplier = 50
+      if (verbose) cat("  Analyzing travel time to nearest urban center (GHS-SMOD)...\n")
+      uc <- search_urban_center_progressive(
+        center_point, regional_bbox_use, tr_corrected = tr_corrected, raster_crs = raster_crs,
+        max_search_multiplier = 50, urban_center_codes = urban_center_codes, ghsl_year = ghsl_year
       )
-    }, error = function(e) { if (verbose) cat("  Error processing urban centers:", e$message, "\n"); results$travel_time_urban_center_min <- NA })
+      results$travel_time_urban_center_min <- uc$value
+      results$travel_time_urban_center_is_boundary_est <- uc$is_boundary_est
+    }, error = function(e) { if (verbose) cat("  Error processing urban centers:", e$message, "\n"); results$travel_time_urban_center_min <- NA; results$travel_time_urban_center_is_boundary_est <- NA })
   }
   
   # Cell towers - uses local bbox
@@ -324,71 +358,54 @@ compute_urbanicity <- function(community_data,
     }, error = function(e) { if (verbose) cat("  Error processing buildings:", e$message, "\n"); results$building_density <- NA })
   }
   
-  # Nighttime light (multi-year) - uses local bbox
-  if (nighttime_light && !is.null(nighttime_light_paths)) {
+  # Nighttime light (multi-year) - uses local bbox, extracted on the EE side
+  if (nighttime_light && !is.null(nighttime_light_years)) {
     if (verbose) cat("  Analyzing nighttime light (multi-year)...\n")
-    poly_for_nl <- sf::st_sf(geometry = poly_local); poly_for_nl$id <- 1
-    
-    for (nl_path in nighttime_light_paths) {
-      tryCatch({
-        # Extract year from filename
-        year_match <- regmatches(nl_path, regexpr("_[0-9]{4}_", nl_path))
-        if (length(year_match) > 0) {
-          year <- gsub("_", "", year_match[1])
-          col_name <- paste0("nighttime_light_", year)
-          
-          if (file.exists(nl_path)) {
-            viirs_raster <- raster::raster(nl_path)
-            nl <- get_light_mean(poly_for_nl, viirs_raster)[1]
-            results[[col_name]] <- as.numeric(nl)
-            if (verbose) cat("    Processed nighttime light for year", year, "\n")
-          } else {
-            results[[col_name]] <- NA
-            if (verbose) cat("    File not found for year", year, "\n")
-          }
-        } else {
-          if (verbose) cat("    Could not extract year from filename:", nl_path, "\n")
+
+    for (year in nighttime_light_years) {
+      col_name <- paste0("nighttime_light_", year)
+      nl <- tryCatch(
+        ee_get_nighttime_light(
+          bbox  = local_bbox,
+          year  = year,
+          asset = nighttime_light_asset
+        ),
+        error = function(e) {
+          if (verbose) cat("    Error processing nighttime light for year", year, "-", e$message, "\n")
+          NA_real_
         }
-      }, error = function(e) {
-        if (verbose) cat("    Error processing nighttime light file:", nl_path, "-", e$message, "\n")
-      })
+      )
+      results[[col_name]] <- as.numeric(nl)
+      if (verbose) cat("    Processed nighttime light for year", year, "\n")
     }
   }
   
-  # Population (multi-year) - uses local bbox
-  if (population && !is.null(population_raster_paths)) {
+  # Population (multi-year) - uses local bbox; total population is summed on the
+  # Earth Engine side, then divided by local bbox area (km^2) to obtain density.
+  if (population && !is.null(population_years)) {
     if (verbose) cat("  Calculating population density (multi-year)...\n")
     poly_projected <- sf::st_transform(poly_local, crs = sf::st_crs(utm_crs))
-    poly_sf <- sf::st_sf(geometry = poly_projected)
     area_km2 <- as.numeric(sf::st_area(poly_projected)) / 1e6
-    
-    for (pop_path in population_raster_paths) {
-      tryCatch({
-        # Extract year from filename
-        year_match <- regmatches(pop_path, regexpr("_[0-9]{4}_", pop_path))
-        if (length(year_match) > 0) {
-          year <- gsub("_", "", year_match[1])
-          col_name <- paste0("pop_density_", year)
-          
-          if (file.exists(pop_path)) {
-            pop_global <- raster::raster(pop_path)
-            extent_comm <- raster::extent(local_bbox["left"], local_bbox["right"], local_bbox["bottom"], local_bbox["top"])
-            pop_r <- raster::crop(pop_global, extent_comm)
-            pop_proj <- raster::projectRaster(pop_r, crs = raster::crs(poly_sf))
-            pop_values <- raster::extract(pop_proj, poly_sf, fun = sum, na.rm = TRUE)
-            total_pop <- sum(pop_values, na.rm = TRUE)
-            results[[col_name]] <- as.numeric(total_pop / area_km2)
-            if (verbose) cat("    Processed population for year", year, "\n")
-          } else {
-            results[[col_name]] <- NA
-            if (verbose) cat("    File not found for year", year, "\n")
-          }
-        } else {
-          if (verbose) cat("    Could not extract year from filename:", pop_path, "\n")
+
+    for (year in population_years) {
+      col_name <- paste0("pop_density_", year)
+      total_pop <- tryCatch(
+        ee_get_population(
+          bbox  = local_bbox,
+          year  = year,
+          asset = population_asset
+        ),
+        error = function(e) {
+          if (verbose) cat("    Error processing population for year", year, "-", e$message, "\n")
+          NA_real_
         }
-      }, error = function(e) {
-        if (verbose) cat("    Error processing population file:", pop_path, "-", e$message, "\n")
-      })
+      )
+      results[[col_name]] <- if (is.na(total_pop) || !is.finite(area_km2) || area_km2 == 0) {
+        NA_real_
+      } else {
+        as.numeric(total_pop / area_km2)
+      }
+      if (verbose) cat("    Processed population for year", year, "\n")
     }
   }
   

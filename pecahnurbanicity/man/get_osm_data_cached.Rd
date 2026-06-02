@@ -4,7 +4,15 @@
 \alias{get_osm_data_cached}
 \title{Query and locally cache OpenStreetMap (OSM) data}
 \usage{
-get_osm_data_cached(bbox, key, value = NULL, cache_dir = "osm_cache")
+get_osm_data_cached(
+  bbox,
+  key,
+  value = NULL,
+  cache_dir = "osm_cache",
+  max_retries = 3,
+  backoff = 5,
+  timeout = 60
+)
 }
 \arguments{
 \item{bbox}{Numeric vector defining the bounding box (\code{c(xmin, ymin, xmax, ymax)}).}
@@ -14,6 +22,15 @@ get_osm_data_cached(bbox, key, value = NULL, cache_dir = "osm_cache")
 \item{value}{Optional character or vector; OSM value(s) (e.g., \code{"school"}, \code{"hospital"}).}
 
 \item{cache_dir}{Directory where cached \code{.rds} files will be stored (default: \code{"osm_cache"}).}
+
+\item{max_retries}{Integer; number of times to retry a failed Overpass query before giving up
+(default = 3, i.e. up to 4 attempts in total). A query that succeeds but finds no features is
+\emph{not} an error and is never retried.}
+
+\item{backoff}{Numeric; base wait in seconds between retries. The wait grows exponentially across
+attempts (\code{backoff}, \code{2 * backoff}, \code{4 * backoff}, ...) (default = 5).}
+
+\item{timeout}{Integer; server-side query timeout in seconds, passed to \code{osmdata::opq()} (default = 60).}
 }
 \value{
 An \code{osmdata_sf} object (list with \verb{$osm_points}, \verb{$osm_lines}, \verb{$osm_polygons}) containing OSM data.
@@ -25,6 +42,13 @@ Results are cached locally as \code{.rds} files to reduce redundant network call
 \details{
 Cached filenames are generated using a hashed digest of the input query parameters (\code{bbox}, \code{key}, and \code{value}).
 This ensures unique caching for different feature types and regions while minimizing redundant API requests.
+
+The Overpass API frequently returns transient rate-limit (HTTP 429) or timeout/server (HTTP 504)
+errors. To stop a single such failure from becoming a permanent \code{NA} in the caller's results, the
+query is retried up to \code{max_retries} times with exponential backoff. Only successful results are
+written to the cache (failures are never cached), so re-running a job retries only the cells that
+previously failed. If every attempt fails the final error is re-raised, so the calling metric still
+records \code{NA} for that query rather than silently masking a persistent outage.
 }
 \examples{
 \dontrun{

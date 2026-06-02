@@ -2,7 +2,7 @@
 % Please edit documentation in R/search_urban_center_progressive.R
 \name{search_urban_center_progressive}
 \alias{search_urban_center_progressive}
-\title{Search progressively for nearest urban center (place = city)}
+\title{Search progressively for the nearest urban center (GHS-SMOD)}
 \usage{
 search_urban_center_progressive(
   center_point,
@@ -11,7 +11,9 @@ search_urban_center_progressive(
   tr_corrected = NULL,
   raster_crs = NULL,
   max_search_multiplier = 50,
-  search_increment = 2
+  search_increment = 2,
+  urban_center_codes = c(23, 30),
+  ghsl_year = 2020
 )
 }
 \arguments{
@@ -28,16 +30,39 @@ search_urban_center_progressive(
 \item{max_search_multiplier}{Integer; maximum expansion factor for the bounding box (default = 50).}
 
 \item{search_increment}{Integer; increment of expansion in each step (default = 2).}
+
+\item{urban_center_codes}{Integer vector of GHS-SMOD \code{smod_code} values treated as an urban
+center. Defaults to \code{c(23, 30)} (Dense Urban Cluster + Urban Center). Use \code{30} for strict
+Urban Center only.}
+
+\item{ghsl_year}{Integer; GHS-SMOD epoch to use (5-year epochs from 1975 to 2030, default = 2020).
+Non-epoch years are snapped to the nearest available epoch.}
 }
 \value{
-Numeric; minimum estimated travel time (in minutes) to the nearest city, or \code{NA} if no city is found.
+A named list with elements \code{value} (numeric; minimum estimated travel time in minutes to the nearest
+urban center, or \code{NA}) and \code{is_boundary_est} (logical; \code{TRUE} when no urban center was found within the
+maximum search area and a boundary-distance estimate was returned instead, \code{FALSE} otherwise).
 }
 \description{
-Expands the search area incrementally to find the nearest city in OpenStreetMap (\code{place = city}),
-optionally calculating least-cost travel time using a friction surface.
+Expands the search area incrementally to find the nearest urban center using the
+GHSL Degree of Urbanisation settlement model (GHS-SMOD), retrieved from Google
+Earth Engine, then computes least-cost travel time to it using a friction surface.
+Replaces the previous OpenStreetMap \code{place = city} search.
+}
+\details{
+GHS-SMOD \code{smod_code} uses Degree-of-Urbanisation level-2 codes: 30 = Urban Center,
+23 = Dense Urban Cluster, 22 = Semi-dense Urban Cluster, 21 = Suburban/Peri-urban,
+13 = Rural Cluster, 12 = Low Density Rural, 11 = Very Low Density Rural, 10 = Water.
+
+The search starts from \code{bbox} and expands by \code{search_increment} each step until urban-center pixels
+(those whose \code{smod_code} is in \code{urban_center_codes}) are found within the extent, or
+\code{max_search_multiplier} is reached. Travel time is then computed to the nearest reachable urban-center
+centroid. If none are found, a boundary-distance estimate is returned (the mean least-cost travel time to
+the four cardinal edge-midpoints of the final search bounding box) with \code{is_boundary_est = TRUE}.
 }
 \examples{
 \dontrun{
+# Earth Engine must be authenticated first: rgee::ee_Initialize()
 tt_city <- search_urban_center_progressive(
   center_point, bbox,
   tr_corrected = tr, raster_crs = raster::crs(friction)

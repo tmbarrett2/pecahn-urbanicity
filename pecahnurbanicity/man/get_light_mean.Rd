@@ -20,6 +20,11 @@ Computes the mean nighttime light intensity within a given polygon using a VIIRS
 \details{
 The function converts the input \code{sf} polygon to a \code{Spatial} object and extracts the mean raster value,
 ignoring missing data (\code{NA} values).
+
+As of package version 0.3.0, nighttime light is extracted directly on the Google Earth Engine side
+(internally, via Earth Engine reducers), so this helper is no longer part of the main
+\code{\link[=compute_urbanicity]{compute_urbanicity()}} flow. It is retained as a standalone convenience for callers who have a
+pre-loaded local \code{RasterLayer} (e.g. an offline VIIRS tile) and want the mean value within a polygon.
 }
 \examples{
 \dontrun{

@@ -1,3 +1,6 @@
 ^pecahnurbanicity\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
+^gee_cache$
+^osm_cache$
+^\.Rhistory$

@@ -18,3 +18,36 @@ You can install the package directly from GitHub:
 ```r
 # install.packages("devtools")
 devtools::install_github("tmbarrett2/pecahn-urbanicity/pecahnurbanicity")
+```
+
+### Data sources & Earth Engine setup
+Raster data (friction surface, WorldPop population, VIIRS nighttime lights, and GHSL settlement
+classification) are pulled directly from **Google Earth Engine** at runtime via the
+[`rgee`](https://r-spatial.github.io/rgee/) package — no manual raster downloads are required.
+OpenStreetMap data (roads, facilities, buildings) is queried live via the Overpass API and cached locally.
+
+You will need a Google Earth Engine account and a Google Cloud Project with the Earth Engine API enabled.
+One-time setup:
+
+```r
+install.packages("rgee")
+library(rgee)
+ee_install()                                    # installs the EE Python API (run once)
+ee_Initialize(project = "your-gcp-project-id")  # authenticate
+```
+
+Then pass your project to the package via the `ee_project` argument and request data by year, e.g.:
+
+```r
+library(pecahnurbanicity)
+results <- compute_urbanicity_iterative(
+  local_bboxes          = bbox_1km,
+  regional_bboxes       = bbox_5km,
+  metrics               = "all",
+  ee_project            = "your-gcp-project-id",
+  population_years      = c(2015, 2020),
+  nighttime_light_years = c(2015, 2020)
+)
+```
+
+See the [vignette](https://tmbarrett2.github.io/pecahn-urbanicity/urbanicity_vignette.html) for a full walkthrough.

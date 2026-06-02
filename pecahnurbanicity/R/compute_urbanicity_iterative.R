@@ -11,19 +11,34 @@
 #' @param regional_bboxes Optional named list of community data with larger bounding boxes for distance/travel
 #'   time calculations. If NULL, uses local_bboxes for all measures.
 #' @param metrics Character vector specifying which indicators to compute (`"all"` or subset).
-#' @param search_buffer Degrees to expand friction surface cropping area (default = 1).
-#' @param friction_surface_path Path to local friction surface raster.
-#' @param population_raster_paths Character vector of paths to population density rasters (e.g., WorldPop) for multiple years.
-#' @param nighttime_light_paths Character vector of paths to nighttime light rasters (e.g., VIIRS) for multiple years.
+#' @param search_buffer Degrees to expand the friction surface fetch/crop area (default = 1).
+#' @param ee_project Optional character; the Google Cloud project passed to `rgee::ee_Initialize()`. Earth Engine is
+#'   initialized once at the start of the run; supply this if you have not already initialized Earth Engine in your
+#'   session and have no default project configured.
+#' @param population_years Integer vector of years for which to compute population density from WorldPop
+#'   (e.g., `c(2015, 2020)`). If `NULL`, population density is skipped.
+#' @param nighttime_light_years Integer vector of years for which to compute mean nighttime light from VIIRS.
+#'   If `NULL`, nighttime light is skipped.
+#' @param friction_asset,population_asset,nighttime_light_asset Optional character overrides for the Earth Engine
+#'   asset IDs. Leave `NULL` to use the package defaults.
+#' @param urban_center_codes Integer vector of GHS-SMOD `smod_code` values defining an "urban center".
+#'   Defaults to `c(23, 30)` (Dense Urban Cluster + Urban Center); use `30` for strict Urban Center only.
+#' @param ghsl_year Integer; GHS-SMOD epoch used for the urban-center search (5-year epochs 1975-2030,
+#'   default = 2020). Non-epoch years are snapped to the nearest available epoch.
 #' @param verbose Logical; if `TRUE`, prints intermediate output from each community run (default = `FALSE`).
 #'
 #' @return
 #' A combined `data.frame` with one row per community and columns for each calculated metric.
 #' Population density columns are named `pop_density_YYYY` and nighttime light columns are named `nighttime_light_YYYY`.
+#' Each travel-time distance measure also has a companion `*_is_boundary_est` logical flag column (see
+#' [compute_urbanicity()]).
 #'
 #' @details
-#' Years are automatically extracted from raster filenames using the pattern `_YYYY_`.
-#' 
+#' Raster data (friction surface, population, nighttime lights) is retrieved from Google Earth Engine via `rgee`,
+#' which must be authenticated beforehand. The friction surface is fetched per community (clipped on the Earth
+#' Engine side) and cached locally in `gee_cache/`. Population and nighttime-light years are taken from
+#' `population_years` and `nighttime_light_years`.
+#'
 #' The local bounding box (communities_list) is used for: population density, nighttime lights, building density,
 #' and counts of shops, financial services, transport stops, and cell towers.
 #' 
@@ -32,25 +47,19 @@
 #'
 #' @examples
 #' \dontrun{
+#' # Earth Engine must be authenticated first: rgee::ee_Initialize()
+#'
 #' # Create both local (1km) and regional (5km) bounding boxes
 #' bbox_1km <- create_bounding_boxes(test_data, distance_km = 1)
 #' bbox_5km <- create_bounding_boxes(test_data, distance_km = 5)
-#' 
+#'
 #' results <- compute_urbanicity_iterative(
 #'   local_bboxes = bbox_1km,
 #'   regional_bboxes = bbox_5km,
 #'   metrics = "all",
-#'   friction_surface_path = "friction_surface_walking.geotiff",
-#'   population_raster_paths = c(
-#'     "worldpop/global_pop_2015_CN_1km_R2025A_UA_v1.tif",
-#'     "worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif",
-#'     "worldpop/global_pop_2025_CN_1km_R2025A_UA_v1.tif"
-#'   ),
-#'   nighttime_light_paths = c(
-#'     "viirs/VNL_npp_2015_global_vcmslcfg_v2.tif",
-#'     "viirs/VNL_npp_2020_global_vcmslcfg_v2.tif",
-#'     "viirs/VNL_npp_2024_global_vcmslcfg_v2.tif"
-#'   )
+#'   ee_project = "my-gcp-project",
+#'   population_years = c(2015, 2020, 2021),
+#'   nighttime_light_years = c(2015, 2020, 2024)
 #' )
 #' }
 #'
@@ -59,9 +68,14 @@ compute_urbanicity_iterative <- function(local_bboxes,
                                          regional_bboxes = NULL,
                                          metrics = c("all"),
                                          search_buffer = 1,  # degrees (~100 km)
-                                         friction_surface_path = NULL,
-                                         population_raster_paths = NULL,
-                                         nighttime_light_paths = NULL,
+                                         ee_project = NULL,
+                                         population_years = NULL,
+                                         nighttime_light_years = NULL,
+                                         friction_asset = NULL,
+                                         population_asset = NULL,
+                                         nighttime_light_asset = NULL,
+                                         urban_center_codes = c(23, 30),
+                                         ghsl_year = 2020,
                                          verbose = FALSE) {
   
   # Determine which metrics to compute
@@ -83,13 +97,15 @@ compute_urbanicity_iterative <- function(local_bboxes,
     do_population      <- "population"      %in% metrics
   }
   
-  # Load friction surface once if needed for distance calculations
-  friction_global <- NULL
-  if ((do_hospital || do_schools || do_roads || do_urban_center) && 
-      !is.null(friction_surface_path) && file.exists(friction_surface_path)) {
-    if (verbose) cat("Loading global friction surface (one-time load)...\n")
-    friction_global <- raster::raster(friction_surface_path)
-    if (verbose) cat("Friction surface loaded\n")
+  # Initialize Earth Engine once up front if any EE-backed metric is requested.
+  # The friction surface is fetched per community (and cached in gee_cache/),
+  # so no global raster is pre-loaded here.
+  need_ee <- (do_hospital || do_schools || do_roads || do_urban_center) ||
+    (do_population && !is.null(population_years)) ||
+    (do_nighttime_light && !is.null(nighttime_light_years))
+  if (need_ee) {
+    if (verbose) cat("Initializing Earth Engine...\n")
+    .ee_ensure_init(ee_project)
   }
   
   # Initialize progress bar
@@ -122,10 +138,14 @@ compute_urbanicity_iterative <- function(local_bboxes,
       nighttime_light = do_nighttime_light,
       population = do_population,
       search_buffer = search_buffer,
-      friction_surface_path = friction_surface_path,
-      friction_surface_global = friction_global,  # Pass pre-loaded raster
-      population_raster_paths = population_raster_paths,
-      nighttime_light_paths = nighttime_light_paths,
+      ee_project = ee_project,
+      population_years = population_years,
+      nighttime_light_years = nighttime_light_years,
+      friction_asset = friction_asset,
+      population_asset = population_asset,
+      nighttime_light_asset = nighttime_light_asset,
+      urban_center_codes = urban_center_codes,
+      ghsl_year = ghsl_year,
       verbose = verbose
     )
     utils::setTxtProgressBar(pb, i)

@@ -11,7 +11,7 @@
 
 <meta name="author" content="Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda Lea, and Melanie Martin" />
 
-<meta name="date" content="2026-01-28" />
+<meta name="date" content="2026-06-02" />
 
 <title>Urbanicity Index for Anthropological Field Sites</title>
 
@@ -1501,7 +1501,7 @@ border-radius: 0px;
 Sites</h1>
 <h4 class="author">Tyler Barrett, Lev Kolinski, Marina Watowich, Amanda
 Lea, and Melanie Martin</h4>
-<h4 class="date">2026-01-28</h4>
+<h4 class="date">2026-06-02</h4>
 
 </div>
 
@@ -1530,50 +1530,87 @@ devtools::install_github(&quot;tmbarrett2/pecahn-urbanicity/pecahnurbanicity&quo
 </div>
 <div id="required-data" class="section level1">
 <h1>Required Data</h1>
-<p>To replicate the examples below, you will need several publicly
-available datasets:</p>
+<p>Raster data are pulled <strong>directly from Google Earth Engine
+(GEE) at runtime</strong>. To run the geospatial measures you need:</p>
+<ul>
+<li>A <strong>Google Earth Engine account</strong> (<a href="https://earthengine.google.com/">sign up at
+earthengine.google.com</a>)</li>
+<li>A <strong>Google Cloud Project</strong> with the Earth Engine API
+enabled</li>
+<li>The <a href="https://r-spatial.github.io/rgee/"><code>rgee</code></a> package
+installed and authenticated (see <strong>Setup</strong> below)</li>
+</ul>
+<p>The datasets accessed on Earth Engine are:</p>
 <ol style="list-style-type: decimal">
-<li><p><strong>Friction surface raster</strong> (for travel time
-measures):<br />
-<em>Source:</em> Malaria Atlas Project – Accessibility to
-Healthcare<br />
-<a href="https://malariaatlas.org/project-resources/accessibility-to-healthcare/" class="uri">https://malariaatlas.org/project-resources/accessibility-to-healthcare/</a><br />
+<li><p><strong>Friction surface</strong> (for travel-time measures):
+Malaria Atlas Project Global Friction Surface 2019, walking-only
+(<code>projects/malariaatlasproject/assets/accessibility/friction_surface/2019_v5_1_walking_only</code>).<br />
 <em>Reference:</em> Weiss et al. (2020). <em>Nature Medicine</em>,
 26(12), 1835–1842. DOI: <a href="https://doi.org/10.1038/s41591-020-1059-1">10.1038/s41591-020-1059-1</a></p></li>
-<li><p><strong>Population density rasters</strong> (for multi-year
-population density estimation):<br />
-<em>Source:</em> WorldPop Global Project Population Data<br />
-<a href="https://www.worldpop.org/" class="uri">https://www.worldpop.org/</a><br />
-<em>Reference:</em> WorldPop (www.worldpop.org - School of Geography and
+<li><p><strong>Population density</strong> (for multi-year population
+estimation): WorldPop Global Project Population
+(<code>projects/sat-io/open-datasets/WORLDPOP/pop</code>, annual
+2015–2030).<br />
+<em>Reference:</em> WorldPop (www.worldpop.org — School of Geography and
 Environmental Science, University of Southampton)</p></li>
-<li><p><strong>Nighttime light imagery</strong> (for multi-year light
-intensity measures):<br />
-<em>Source:</em> Earth Observation Group - VIIRS Nighttime Light<br />
-<a href="https://eogdata.mines.edu/products/vnl/" class="uri">https://eogdata.mines.edu/products/vnl/</a><br />
+<li><p><strong>Nighttime lights</strong> (for multi-year light intensity
+measures): VIIRS DNB annual composites
+(<code>NOAA/VIIRS/DNB/ANNUAL_V22</code>, band
+<code>average_masked</code>).<br />
 <em>Reference:</em> Elvidge et al. (2021). <em>Remote Sensing</em>,
 13(5), 922. DOI: <a href="https://doi.org/10.3390/rs13050922">10.3390/rs13050922</a></p></li>
+<li><p><strong>Settlement classification</strong> (for the nearest urban
+center): GHSL Degree of Urbanisation settlement model, GHS-SMOD
+(<code>JRC/GHSL/P2023A/GHS_SMOD_V2-0</code>).<br />
+<em>Reference:</em> European Commission Joint Research Centre, GHSL
+project (P2023A).</p></li>
 </ol>
-<p>PEcAHN members can download these data files from the shared Google
-Drive folder:<br />
-<a href="https://drive.google.com/drive/u/0/folders/1C6RWI7yhAM9UDjwMc7w9nxW30W5u3wee" class="uri">https://drive.google.com/drive/u/0/folders/1C6RWI7yhAM9UDjwMc7w9nxW30W5u3wee</a></p>
-<p>Save the raster files to a local folder (e.g.,
-<code>pecahn-urbanicity/test_data/</code>).</p>
+<p><strong>OpenStreetMap</strong> data (roads, facilities, buildings)
+are queried live via the Overpass API and cached locally.</p>
 <hr />
 </div>
 <div id="setup" class="section level1">
 <h1>Setup</h1>
 <pre class="r"><code># Install dependencies if not already available
-# install.packages(c(&quot;osmdata&quot;, &quot;sf&quot;, &quot;raster&quot;, &quot;gdistance&quot;, &quot;ggplot2&quot;, &quot;dplyr&quot;))
+# install.packages(c(&quot;osmdata&quot;, &quot;sf&quot;, &quot;raster&quot;, &quot;gdistance&quot;, &quot;rgee&quot;, &quot;ggplot2&quot;, &quot;dplyr&quot;))
 
 # Load the package
 library(pecahnurbanicity)</code></pre>
 <p><code>pecahnurbanicity</code> has help documentation. For any
 function, you can use <code>?function-name</code> to bring up the
 documentation.</p>
-<p>Set your local file path to where the rasters and site coordinate
-files are stored:</p>
+<div id="google-earth-engine-setup" class="section level2">
+<h2>Google Earth Engine setup</h2>
+<p>The geospatial raster measures pull data from Google Earth Engine
+through <code>rgee</code>. The first time you use the package you need
+to install the Earth Engine Python API and authenticate:</p>
+<pre class="r"><code># Install rgee if not already installed
+# install.packages(&quot;rgee&quot;)
+
+# One-time setup: installs the EE Python API in an isolated environment
+library(rgee)
+ee_install(py_env = &quot;rgee&quot;)  # run once; follow prompts for Miniconda if needed
+
+# Authenticate with your Google account (opens a browser window)
+ee_Initialize(project = &quot;your-gcp-project-id&quot;)
+
+# Verify setup
+ee_check()</code></pre>
+<p>If you have already run <code>ee_install()</code> and
+<code>ee_Initialize()</code> in a prior session, you can start directly
+with
+<code>library(rgee); ee_Initialize(project = &quot;your-gcp-project-id&quot;)</code>.
+The package will also initialize Google Earth Engine automatically the
+first time it needs raster data, as long as you pass your project via
+the <code>ee_project</code> argument (shown below).</p>
+</div>
+<div id="site-coordinate-files" class="section level2">
+<h2>Site coordinate files</h2>
+<p>Set your local file path to where your site coordinates are
+stored:</p>
 <pre class="r"><code>fp &lt;- &quot;your_local_path/pecahn-urbanicity/test_data&quot;</code></pre>
 <hr />
+</div>
 </div>
 <div id="load-example-data" class="section level1">
 <h1>Load Example Data</h1>
@@ -1628,14 +1665,18 @@ outward by the given radius (default: 5 km).</li>
 <div id="single-year-analysis" class="section level2">
 <h2>Single-Year Analysis</h2>
 <p>For a single year of population and nighttime light data:</p>
-<pre class="r"><code>test_results_single &lt;- compute_urbanicity_iterative(
-  local_bboxes = bbox_1km,
+<pre class="r"><code># Replace &quot;your-gcp-project&quot; with your Google Cloud Project ID
+ee_Initialize(project = &quot;your-gcp-project&quot;)
+
+test_results_single &lt;- compute_urbanicity_iterative(
+  local_bboxes    = bbox_1km,
   regional_bboxes = bbox_5km,
-  metrics = &quot;all&quot;,
-  search_buffer = 10,  # Expand search by ~1,000 km as needed
-  friction_surface_path  = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
-  population_raster_paths = file.path(fp, &quot;worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif&quot;),
-  nighttime_light_paths   = file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2020_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
+  metrics         = &quot;all&quot;,
+  ee_project      = &quot;your-gcp-project&quot;,
+  search_buffer   = 1,  # degrees of friction-surface padding; keep modest (the
+                        # friction raster is pulled via a size-limited download URL)
+  population_years      = 2025,
+  nighttime_light_years = 2025,
   verbose = FALSE
 )</code></pre>
 <p><strong>Note:</strong> If you only have one set of bounding boxes,
@@ -1643,77 +1684,85 @@ you can omit <code>regional_bboxes</code> and the function will use
 <code>local_bboxes</code> for all measures:</p>
 <pre class="r"><code>test_results_single &lt;- compute_urbanicity_iterative(
   local_bboxes = bbox_5km,
-  metrics = &quot;all&quot;,
-  friction_surface_path  = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
-  population_raster_paths = file.path(fp, &quot;worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif&quot;),
-  nighttime_light_paths   = file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2020_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;)
+  metrics      = &quot;all&quot;,
+  ee_project   = &quot;your-gcp-project&quot;,
+  population_years      = 2020,
+  nighttime_light_years = 2020
 )</code></pre>
 </div>
 <div id="multi-year-analysis" class="section level2">
 <h2>Multi-Year Analysis</h2>
-<p>To track urbanization trends over time, provide vectors of raster
-file paths for multiple years:</p>
-<pre class="r"><code># Define population raster paths (2015-2025)
-worldpop_files &lt;- c(
-  file.path(fp, &quot;worldpop/global_pop_2015_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2016_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2017_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2018_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2019_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2020_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2021_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2022_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2023_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2024_CN_1km_R2025A_UA_v1.tif&quot;),
-  file.path(fp, &quot;worldpop/global_pop_2025_CN_1km_R2025A_UA_v1.tif&quot;)
-)
-
-# Define nighttime light paths (2013-2024)
-nightlight_files &lt;- c(
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2013_global_vcmcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2014_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2015_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2016_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2017_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2018_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2019_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2020_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v21_npp_2021_global_vcmslcfg_c202205302300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_v22_npp-j01_2022_global_vcmslcfg_c202303062300.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_npp_2023_global_vcmslcfg_v2_c202402081600.average_masked.dat.tif&quot;),
-  file.path(fp, &quot;viirs/extracted/VNL_npp_2024_global_vcmslcfg_v2_c202502261200.average_masked.dat.tif&quot;)
-)
-
-# Compute multi-year urbanicity metrics
+<p>To track urbanization trends over time, provide vectors of
+<strong>years</strong> for population and nighttime lights. The data for
+each year are pulled from Earth Engine automatically — no file paths
+needed.</p>
+<pre class="r"><code># Compute multi-year urbanicity metrics
 test_results_multiyear &lt;- compute_urbanicity_iterative(
-  local_bboxes = bbox_1km,
+  local_bboxes    = bbox_1km,
   regional_bboxes = bbox_5km,
-  metrics = &quot;all&quot;,
-  search_buffer = 10,
-  friction_surface_path   = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
-  population_raster_paths = worldpop_files,
-  nighttime_light_paths   = nightlight_files,
+  metrics         = &quot;all&quot;,
+  ee_project      = &quot;your-gcp-project&quot;,
+  search_buffer   = 1,
+  population_years      = c(2015, 2017, 2019, 2021, 2023, 2025),
+  nighttime_light_years = c(2015, 2017, 2019, 2021, 2023, 2025),
   verbose = FALSE
 )</code></pre>
-<p>Years are automatically extracted from the filenames (e.g.,
-<code>_2020_</code>), and the resulting columns are named: -
-<code>pop_density_2015</code>, <code>pop_density_2016</code>, …,
-<code>pop_density_2025</code> - <code>nighttime_light_2013</code>,
-<code>nighttime_light_2014</code>, …,
-<code>nighttime_light_2024</code></p>
+<p>The resulting time-varying columns are named after the requested
+years: - <code>pop_density_2015</code>, <code>pop_density_2017</code>,
+…, <code>pop_density_2025</code> - <code>nighttime_light_2015</code>,
+<code>nighttime_light_2017</code>, …,
+<code>nighttime_light_2025</code></p>
+<p><strong>Data coverage:</strong> the default WorldPop next-generation
+collection covers 2015–2030 and VIIRS annual lights cover 2012–2025. For
+population years before 2015, override
+<code>population_asset = &quot;WorldPop/GP/100m/pop&quot;</code> (the official
+WorldPop product, 2000–2021).</p>
 </div>
 <div id="subset-of-metrics" class="section level2">
 <h2>Subset of Metrics</h2>
 <p>You can also compute only selected metrics:</p>
 <pre class="r"><code>test_results_subset &lt;- compute_urbanicity_iterative(
-  local_bboxes = bbox_1km,
+  local_bboxes    = bbox_1km,
   regional_bboxes = bbox_5km,
-  metrics = c(&quot;roads&quot;, &quot;shops&quot;, &quot;healthcare&quot;, &quot;schools&quot;, &quot;population&quot;, &quot;nighttime_light&quot;),
-  search_buffer = 1,
-  friction_surface_path   = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
-  population_raster_paths = worldpop_files,
-  nighttime_light_paths   = nightlight_files
+  metrics         = c(&quot;roads&quot;, &quot;shops&quot;, &quot;hospital&quot;, &quot;schools&quot;, &quot;population&quot;, &quot;nighttime_light&quot;),
+  ee_project      = &quot;your-gcp-project&quot;,
+  search_buffer   = 1,
+  population_years      = c(2015, 2020),
+  nighttime_light_years = c(2015, 2020)
 )</code></pre>
+</div>
+<div id="urban-center-ghsl-degree-of-urbanisation" class="section level2">
+<h2>Urban Center: GHSL Degree of Urbanisation</h2>
+<p>The nearest <strong>urban center</strong> is identified using the
+GHSL Degree of Urbanisation settlement model (GHS-SMOD) on Google Earth
+Engine. The function finds the nearest GHS-SMOD urban cell and reports
+least-cost travel time to it
+(<code>travel_time_urban_center_min</code>).</p>
+<p>Two arguments control this:</p>
+<ul>
+<li><code>urban_center_codes</code> — which GHS-SMOD
+<code>smod_code</code> classes count as an “urban center”. The default
+is <code>c(23, 30)</code> (Dense Urban Cluster <strong>and</strong>
+Urban Center). Use <code>30</code> for strict Urban Center only.</li>
+<li><code>ghsl_year</code> — the GHS-SMOD epoch (5-year epochs from 1975
+to 2030; default <code>2020</code>). Non-epoch years are snapped to the
+nearest available epoch.</li>
+</ul>
+<pre class="r"><code># Strict Urban Center only (smod_code == 30), 2020 epoch
+res_strict_urban &lt;- compute_urbanicity_iterative(
+  local_bboxes    = bbox_1km,
+  regional_bboxes = bbox_5km,
+  metrics         = &quot;all&quot;,
+  ee_project      = &quot;your-gcp-project&quot;,
+  urban_center_codes = 30,
+  ghsl_year          = 2020,
+  population_years      = 2020,
+  nighttime_light_years = 2020
+)</code></pre>
+<p>For remote field sites with no nearby formal Urban Center, the wider
+default (<code>urban_center_codes = c(23, 30)</code>) makes it more
+likely that a nearby urban cell is found before the progressive search
+is exhausted (see the boundary-distance flags below).</p>
 </div>
 <div id="large-datasets-5-locations" class="section level2">
 <h2>Large Datasets (&gt;5 Locations)</h2>
@@ -1750,10 +1799,10 @@ for (start_idx in seq(1, n, by = 5)) {
     local_bboxes        = bbox_1km[idx_range],
     regional_bboxes     = bbox_5km[idx_range],
     metrics             = &quot;all&quot;,
-    search_buffer       = 10,
-    friction_surface_path   = file.path(fp, &quot;friction_surface_walking.geotiff&quot;),
-    population_raster_paths = file.path(fp, &quot;worldpop/global_pop_2024_CN_1km_R2025A_UA_v1.tif&quot;),
-    nighttime_light_paths   = file.path(fp, &quot;viirs/VNL_npp_2024_global_vcmslcfg_v2_c202502261200.average_masked.dat.tif&quot;),
+    ee_project          = &quot;your-gcp-project&quot;,
+    search_buffer       = 1,
+    population_years      = 2020,
+    nighttime_light_years = 2020,
     verbose = TRUE
   )
   
@@ -1778,7 +1827,7 @@ generates summary plots for all numeric variables.</p>
 
 # Example plots for infrastructure metrics
 summary_plots$pct_paved_roads
-summary_plots$travel_time_healthcare_min
+summary_plots$travel_time_hospital_min
 
 # Example plots for single-year time-varying metrics
 summary_plots$pop_density_2020
@@ -1803,7 +1852,7 @@ temporal_plots$nighttime_light</code></pre>
 
 # Access summary plots
 all_plots$summary_plots$pct_paved_roads
-all_plots$summary_plots$travel_time_healthcare_min
+all_plots$summary_plots$travel_time_hospital_min
 
 # Access temporal plots
 all_plots$temporal_plots$pop_density
@@ -1834,8 +1883,8 @@ urbanicity indicator:</p>
 <td>Percent of total road length that is paved</td>
 </tr>
 <tr class="even">
-<td><code>travel_time_healthcare_min</code></td>
-<td>Estimated walking time (min) to nearest healthcare facility</td>
+<td><code>travel_time_hospital_min</code></td>
+<td>Estimated walking time (min) to nearest hospital</td>
 </tr>
 <tr class="odd">
 <td><code>travel_time_school_min</code></td>
@@ -1892,6 +1941,53 @@ urbanicity indicator:</p>
 </tr>
 </tbody>
 </table>
+</div>
+<div id="boundary-distance-flags" class="section level2">
+<h2>Boundary-Distance Flags</h2>
+<p>Each travel-time distance measure has a companion logical flag
+column:</p>
+<table>
+<colgroup>
+<col width="45%" />
+<col width="54%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>travel_time_paved_road_is_boundary_est</code></td>
+<td>flag for the paved-road travel time</td>
+</tr>
+<tr class="even">
+<td><code>travel_time_hospital_is_boundary_est</code></td>
+<td>flag for the hospital travel time</td>
+</tr>
+<tr class="odd">
+<td><code>travel_time_school_is_boundary_est</code></td>
+<td>flag for the school travel time</td>
+</tr>
+<tr class="even">
+<td><code>travel_time_urban_center_is_boundary_est</code></td>
+<td>flag for the urban-center travel time</td>
+</tr>
+</tbody>
+</table>
+<p>A flag is <code>TRUE</code> when <strong>no feature was
+found</strong> within the maximum search area, so the reported travel
+time is a <em>boundary-distance estimate</em> (the mean travel time to
+the four edge-midpoints of the largest search box) rather than a
+measured time to a real feature. It is <code>FALSE</code> when a real
+feature was used, and <code>NA</code> when that metric was not
+computed.</p>
+<p>Treat <code>TRUE</code> rows as <strong>right-censored /
+lower-bound</strong> observations — the true facility is at least as far
+as the reported value. In downstream analysis you may wish to exclude
+them, run a sensitivity analysis with and without them, or model them
+explicitly as censored.</p>
 <p>These indicators can be aggregated or combined into composite indices
 of urbanicity, and the multi-year data enables longitudinal analysis of
 urbanization processes.</p>
@@ -1903,7 +1999,7 @@ urbanization processes.</p>
 <p>If you use this package in your research, please cite:</p>
 <p>Barrett, T., Kolinski, L., Watowich, M., Lea, A., &amp; Martin, M.
 (2025). pecahnurbanicity: Tools for computing urbanicity metrics for
-anthropological field sites. R package version 0.2.0. <a href="https://github.com/tmbarrett2/pecahn-urbanicity" class="uri">https://github.com/tmbarrett2/pecahn-urbanicity</a></p>
+anthropological field sites. R package version 0.3.0. <a href="https://github.com/tmbarrett2/pecahn-urbanicity" class="uri">https://github.com/tmbarrett2/pecahn-urbanicity</a></p>
 <hr />
 </div>
 

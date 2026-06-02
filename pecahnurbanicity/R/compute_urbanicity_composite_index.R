@@ -98,11 +98,12 @@
 #'
 #' @examples
 #' \dontrun{
+#' # Earth Engine must be authenticated first: rgee::ee_Initialize()
 #' results <- compute_urbanicity_iterative(
-#'   communities             = community_list,
-#'   friction_surface_path   = "friction_surface_walking.geotiff",
-#'   population_raster_paths = c("worldpop_2015.tif", "worldpop_2020.tif"),
-#'   nighttime_light_paths   = c("viirs_2015.tif",    "viirs_2020.tif")
+#'   communities           = community_list,
+#'   ee_project            = "my-gcp-project",
+#'   population_years      = c(2015, 2020),
+#'   nighttime_light_years = c(2015, 2020)
 #' )
 #'
 #' # Z-score composite (recommended)

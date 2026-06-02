@@ -20,10 +20,14 @@ compute_urbanicity(
   nighttime_light = TRUE,
   population = TRUE,
   search_buffer = 1,
-  friction_surface_path = NULL,
-  friction_surface_global = NULL,
-  population_raster_paths = NULL,
-  nighttime_light_paths = NULL,
+  ee_project = NULL,
+  population_years = NULL,
+  nighttime_light_years = NULL,
+  friction_asset = NULL,
+  population_asset = NULL,
+  nighttime_light_asset = NULL,
+  urban_center_codes = c(23, 30),
+  ghsl_year = 2020,
   verbose = FALSE
 )
 }
@@ -38,23 +42,37 @@ If NULL, uses the bbox from community_data for all measures.}
 
 \item{roads, shops, hospital, transport, financial, schools, urban_center, cell_towers, buildings, nighttime_light, population}{Logical flags controlling which metrics are computed.}
 
-\item{search_buffer}{Numeric; degrees to expand the bounding box when cropping friction surfaces (default = 1).}
+\item{search_buffer}{Numeric; degrees to expand the bounding box when fetching/cropping the friction surface (default = 1).}
 
-\item{friction_surface_path}{Path to the friction surface raster used for travel time calculations.}
+\item{ee_project}{Optional character; the Google Cloud project passed to \code{rgee::ee_Initialize()}. Earth Engine is
+initialized automatically on first use; supply this if you have not already initialized Earth Engine in your
+session and have no default project configured.}
 
-\item{friction_surface_global}{Optional pre-loaded global friction surface raster. If provided, this will be used
-instead of loading from friction_surface_path. This parameter is typically used internally by
-\code{\link[=compute_urbanicity_iterative]{compute_urbanicity_iterative()}} to avoid reloading the same raster for multiple communities.}
+\item{population_years}{Integer vector of years for which to compute population density from WorldPop
+(e.g., \code{c(2015, 2020)}). If \code{NULL}, population density is skipped.}
 
-\item{population_raster_paths}{Character vector of paths to population density rasters (e.g., WorldPop) for multiple years.}
+\item{nighttime_light_years}{Integer vector of years for which to compute mean nighttime light from VIIRS.
+If \code{NULL}, nighttime light is skipped.}
 
-\item{nighttime_light_paths}{Character vector of paths to nighttime light rasters (e.g., VIIRS) for multiple years.}
+\item{friction_asset, population_asset, nighttime_light_asset}{Optional character overrides for the Earth Engine
+asset IDs (friction surface, WorldPop population, VIIRS nighttime lights). Leave \code{NULL} to use the package defaults.}
+
+\item{urban_center_codes}{Integer vector of GHS-SMOD \code{smod_code} values defining an "urban center" for the
+nearest-urban-center travel time. Defaults to \code{c(23, 30)} (Dense Urban Cluster + Urban Center); use \code{30}
+for strict Urban Center only.}
+
+\item{ghsl_year}{Integer; GHS-SMOD epoch used for the urban-center search (5-year epochs 1975-2030,
+default = 2020). Non-epoch years are snapped to the nearest available epoch.}
 
 \item{verbose}{Logical; if \code{TRUE}, prints progress messages (default = \code{FALSE}).}
 }
 \value{
 A one-row \code{data.frame} containing numeric and categorical urbanicity metrics for the specified community.
 Population density columns are named \code{pop_density_YYYY} and nighttime light columns are named \code{nighttime_light_YYYY}.
+Each travel-time distance measure (\code{travel_time_paved_road_min}, \code{travel_time_hospital_min},
+\code{travel_time_school_min}, \code{travel_time_urban_center_min}) has a companion logical flag column
+(\verb{*_is_boundary_est}) that is \code{TRUE} when no feature was found within the maximum search area and a
+boundary-distance estimate was returned, and \code{FALSE} when a real feature was used.
 }
 \description{
 Computes multiple geospatial and infrastructural indicators of urbanicity for a single community,
@@ -65,9 +83,14 @@ and nighttime lights (Earth Observation Group). Supports separate bounding boxes
 (population, infrastructure) and regional measures (travel times to facilities).
 }
 \details{
+Raster data (friction surface, population, nighttime lights) is retrieved from Google Earth Engine via
+\code{rgee}; Earth Engine must be authenticated beforehand (see \code{rgee::ee_install()} / \code{rgee::ee_Initialize()}).
 Travel time calculations rely on \code{gdistance::costDistance()} and a precomputed transition matrix derived
-from the friction surface raster. OSM queries are automatically cached to minimize repeated downloads.
-Years are automatically extracted from raster filenames using the pattern \verb{_YYYY_}.
+from the Earth Engine friction surface. OSM queries and Earth Engine results are cached locally to minimize
+repeated downloads (OSM in \verb{osm_cache/}, Earth Engine results in \verb{gee_cache/}, keyed on a digest of the
+bounding box, asset ID, and year). Population and nighttime-light years are taken from \code{population_years}
+and \code{nighttime_light_years}. The nearest urban center is derived from the GHSL Degree-of-Urbanisation
+layer (GHS-SMOD) rather than OpenStreetMap.
 
 The local_bbox (from community_data) is used for: population density, nighttime lights, building density,
 and counts of shops, financial services, transport stops, and cell towers.
@@ -76,6 +99,8 @@ The regional_bbox is used for: travel time to hospital, schools, paved roads, an
 }
 \examples{
 \dontrun{
+# Earth Engine must be authenticated first: rgee::ee_Initialize()
+
 # Create both local (1km) and regional (5km) bounding boxes
 bbox_1km <- create_bounding_boxes(test_data, distance_km = 1)
 bbox_5km <- create_bounding_boxes(test_data, distance_km = 5)
@@ -83,9 +108,9 @@ bbox_5km <- create_bounding_boxes(test_data, distance_km = 5)
 results <- compute_urbanicity(
   community_data = bbox_1km[["Mandena"]],
   regional_bbox = bbox_5km[["Mandena"]],
-  friction_surface_path = "friction_surface_walking.geotiff",
-  population_raster_paths = c("worldpop_2015.tif", "worldpop_2020.tif"),
-  nighttime_light_paths = c("viirs_2015.tif", "viirs_2020.tif")
+  ee_project = "my-gcp-project",
+  population_years = c(2015, 2020),
+  nighttime_light_years = c(2015, 2020)
 )
 }
 

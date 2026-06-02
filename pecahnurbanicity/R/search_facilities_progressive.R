@@ -14,8 +14,17 @@
 #' @param search_increment Integer; amount to increase the expansion multiplier in each iteration (default = 2).
 #'
 #' @return
-#' Numeric; minimum walking travel time (in minutes) from the community center to the nearest facility, or `NA`
-#' if no facilities are found within the expanded area.
+#' A named list with elements `value` (numeric; minimum walking travel time in minutes from the community
+#' center to the nearest facility, or `NA`) and `is_boundary_est` (logical; `TRUE` when no facility was found
+#' within the maximum search area and a boundary-distance estimate was returned instead, `FALSE` otherwise).
+#'
+#' @details
+#' If no facility of `facility_type` is found after expanding to `max_search_multiplier`, the function returns
+#' a *boundary-distance estimate* instead of `NA`. It computes least-cost travel time from `center_point` to
+#' the midpoints of the four edges (north, east, south, west) of the final (largest) search bounding box and
+#' returns the mean of the finite values, setting `is_boundary_est = TRUE`. This is a conservative lower-bound
+#' proxy ("the nearest such facility is at least this far"), not a measured travel time to a real feature, so
+#' downstream analyses should treat flagged values accordingly (e.g. as right-censored observations).
 #'
 #' @examples
 #' \dontrun{
@@ -103,10 +112,10 @@ search_facilities_progressive <- function(center_point, bbox, facility_type,
           fac_ext["ymin"] < friction_extent@ymin ||
           fac_ext["ymax"] > friction_extent@ymax) {
         message(sprintf("  Found %s outside friction raster extent. Returning NA.", facility_type))
-        return(NA)
+        return(list(value = NA_real_, is_boundary_est = FALSE))
       }
     }
-    
+
     if (facility_type == "paved_road") {
       suppressWarnings({
         facility_points <- sf::st_sf(geometry = sf::st_cast(sf::st_geometry(found_facilities), "POINT"))
@@ -114,10 +123,14 @@ search_facilities_progressive <- function(center_point, bbox, facility_type,
     } else {
       facility_points <- found_facilities
     }
-    
-    return(calculate_travel_time(center_point, facility_points, tr_corrected, raster_crs))
+
+    tt <- calculate_travel_time(center_point, facility_points, tr_corrected, raster_crs)
+    return(list(value = tt, is_boundary_est = FALSE))
   }
-  
-  message(sprintf("  No %s found within maximum search area.", facility_type))
-  return(NA)
+
+  # Search exhausted (or no friction surface): fall back to a boundary-distance
+  # estimate against the final (largest) search bbox reached above.
+  message(sprintf("  No %s found - returning boundary-distance estimate.", facility_type))
+  est <- .boundary_distance_estimate(search_bbox, center_point, tr_corrected, raster_crs)
+  return(list(value = est, is_boundary_est = TRUE))
 }

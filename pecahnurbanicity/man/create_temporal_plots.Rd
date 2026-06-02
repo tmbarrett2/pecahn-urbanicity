@@ -30,10 +30,12 @@ readability.
 \examples{
 \dontrun{
 # Compute urbanicity with multi-year data
+# (Earth Engine must be authenticated first: rgee::ee_Initialize())
 results <- compute_urbanicity_iterative(
   bbox_5km,
-  population_raster_paths = c("pop_2015.tif", "pop_2020.tif", "pop_2025.tif"),
-  nighttime_light_paths = c("nl_2015.tif", "nl_2020.tif", "nl_2024.tif")
+  ee_project = "my-gcp-project",
+  population_years = c(2015, 2020, 2025),
+  nighttime_light_years = c(2015, 2020, 2024)
 )
 
 # Create temporal plots

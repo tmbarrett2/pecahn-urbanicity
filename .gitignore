@@ -32,6 +32,10 @@ vignettes/*.pdf
 *_cache/
 /cache/
 
+# Local data caches (Google Earth Engine + OSM/Overpass)
+gee_cache/
+osm_cache/
+
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
