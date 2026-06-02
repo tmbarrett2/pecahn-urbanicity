@@ -20,11 +20,11 @@ You can install the package directly from GitHub:
 devtools::install_github("tmbarrett2/pecahn-urbanicity/pecahnurbanicity")
 ```
 
-### Data sources & Earth Engine setup
+### Data sources & Google Earth Engine setup
 Raster data (friction surface, WorldPop population, VIIRS nighttime lights, and GHSL settlement
 classification) are pulled directly from **Google Earth Engine** at runtime via the
-[`rgee`](https://r-spatial.github.io/rgee/) package — no manual raster downloads are required.
-OpenStreetMap data (roads, facilities, buildings) is queried live via the Overpass API and cached locally.
+[`rgee`](https://r-spatial.github.io/rgee/) package.
+OpenStreetMap data (roads, facilities, buildings) are queried live via the Overpass API and cached locally.
 
 You will need a Google Earth Engine account and a Google Cloud Project with the Earth Engine API enabled.
 One-time setup:
