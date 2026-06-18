@@ -28,6 +28,11 @@ a friction surface.
 This function transforms both origin and destination coordinates to the CRS of the
 friction surface, computes least-cost path distances using \code{gdistance::costDistance()},
 and returns the minimum finite value.
+
+If the origin or \emph{every} destination falls outside the friction grid (e.g. a feature
+beyond the raster's coverage), \code{gdistance::costDistance()} errors. That case is caught
+and reported as \code{NA} ("unreachable on this friction surface") rather than propagating,
+so callers can fall back to a boundary-distance estimate instead of aborting.
 }
 \examples{
 \dontrun{

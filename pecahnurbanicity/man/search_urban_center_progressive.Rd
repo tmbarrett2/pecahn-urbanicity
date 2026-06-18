@@ -57,8 +57,10 @@ GHS-SMOD \code{smod_code} uses Degree-of-Urbanisation level-2 codes: 30 = Urban 
 The search starts from \code{bbox} and expands by \code{search_increment} each step until urban-center pixels
 (those whose \code{smod_code} is in \code{urban_center_codes}) are found within the extent, or
 \code{max_search_multiplier} is reached. Travel time is then computed to the nearest reachable urban-center
-centroid. If none are found, a boundary-distance estimate is returned (the mean least-cost travel time to
-the four cardinal edge-midpoints of the final search bounding box) with \code{is_boundary_est = TRUE}.
+centroid. If none are found — or if those found are all unreachable on the friction surface (beyond the
+raster's coverage, so the travel time is \code{NA}) — a boundary-distance estimate is returned (the mean
+least-cost travel time to the four cardinal edge-midpoints of the final search bounding box) with
+\code{is_boundary_est = TRUE}.
 }
 \examples{
 \dontrun{

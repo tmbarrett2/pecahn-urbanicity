@@ -42,12 +42,14 @@ Expands the bounding box around a community incrementally until at least one fac
 is found in OpenStreetMap data. Optionally computes travel time to the nearest facility using a friction surface.
 }
 \details{
-If no facility of \code{facility_type} is found after expanding to \code{max_search_multiplier}, the function returns
-a \emph{boundary-distance estimate} instead of \code{NA}. It computes least-cost travel time from \code{center_point} to
-the midpoints of the four edges (north, east, south, west) of the final (largest) search bounding box and
-returns the mean of the finite values, setting \code{is_boundary_est = TRUE}. This is a conservative lower-bound
-proxy ("the nearest such facility is at least this far"), not a measured travel time to a real feature, so
-downstream analyses should treat flagged values accordingly (e.g. as right-censored observations).
+If no facility of \code{facility_type} is found after expanding to \code{max_search_multiplier} — or if one is found
+but is unreachable on the friction surface (it lies beyond the raster's coverage, so the travel time is
+\code{NA}) — the function returns a \emph{boundary-distance estimate} instead of \code{NA}. It computes least-cost travel
+time from \code{center_point} to the midpoints of the four edges (north, east, south, west) of the final
+(largest) search bounding box and returns the mean of the finite values, setting \code{is_boundary_est = TRUE}.
+This is a conservative lower-bound proxy ("the nearest such facility is at least this far"), not a measured
+travel time to a real feature, so downstream analyses should treat flagged values accordingly (e.g. as
+right-censored observations).
 }
 \examples{
 \dontrun{

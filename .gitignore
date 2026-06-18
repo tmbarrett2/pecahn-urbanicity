@@ -51,6 +51,7 @@ rsconnect/
 
 # Data Files
 *.csv
+!reference_data/ref_pts.csv
 /PEcAHN
 .DS_Store
 pecahnurbanicity/pecahnurbanicity.Rproj

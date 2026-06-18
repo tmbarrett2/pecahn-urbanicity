@@ -32,8 +32,10 @@
 #' The search starts from `bbox` and expands by `search_increment` each step until urban-center pixels
 #' (those whose `smod_code` is in `urban_center_codes`) are found within the extent, or
 #' `max_search_multiplier` is reached. Travel time is then computed to the nearest reachable urban-center
-#' centroid. If none are found, a boundary-distance estimate is returned (the mean least-cost travel time to
-#' the four cardinal edge-midpoints of the final search bounding box) with `is_boundary_est = TRUE`.
+#' centroid. If none are found — or if those found are all unreachable on the friction surface (beyond the
+#' raster's coverage, so the travel time is `NA`) — a boundary-distance estimate is returned (the mean
+#' least-cost travel time to the four cardinal edge-midpoints of the final search bounding box) with
+#' `is_boundary_est = TRUE`.
 #'
 #' @examples
 #' \dontrun{
@@ -106,11 +108,17 @@ search_urban_center_progressive <- function(center_point, bbox,
     # Pass all candidate centroids; calculate_travel_time() returns the minimum,
     # i.e. travel time to the nearest reachable urban center.
     tt <- calculate_travel_time(center_point, found_centers, tr_corrected, raster_crs)
-    return(list(value = tt, is_boundary_est = FALSE))
+    if (is.finite(tt)) {
+      return(list(value = tt, is_boundary_est = FALSE))
+    }
+    # Urban centers were found but none is reachable on the friction surface (all
+    # lie beyond the raster's coverage), so calculate_travel_time() returned NA.
+    # Fall through to the boundary-distance estimate rather than reporting a bare NA.
+    message("  Nearest urban center unreachable on friction surface - using boundary-distance estimate.")
   }
 
-  # Search exhausted (or no friction surface): boundary-distance estimate.
-  message("  No urban center found - returning boundary-distance estimate.")
+  # Search exhausted, found-but-unreachable, or no friction surface: boundary-distance estimate.
+  message("  No reachable urban center found - returning boundary-distance estimate.")
   est <- .boundary_distance_estimate(search_bbox, center_point, tr_corrected, raster_crs)
   return(list(value = est, is_boundary_est = TRUE))
 }

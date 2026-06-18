@@ -1,0 +1,251 @@
+---
+title: "Calculating Urbanicity Scores for Reference Set"
+author: "Lev Kolinski"
+date: "`r Sys.Date()`"
+output: html_document
+---
+## Setting File Paths and Arguments
+Update the file paths/objects below with your relevant information. All arguments will be fed directly into the compute_uranicity_iterative() call below.
+```{r set_objects}
+Sys.setenv(RETICULATE_PYTHON = "C:/Users/tmbar/AppData/Local/r-miniconda/envs/rgee/python.exe")
+
+# Set Path To Local Overpass Instance
+osmdata::set_overpass_url("http://localhost:12345/api/interpreter")
+
+# where your reference coordinate set is stored
+reference_coordinate_set_fp <- "C:/Users/tmbar/OneDrive - Duke University/Active Projects/pecahn/ref_pts.csv"
+
+# your Google Earth Engine project name
+ee_project_name <- "ee-tmbarrett2"
+
+# year/years to calculate population density and nighttime light intensity
+year_or_years <- c(2015:2025)
+
+# file path where your urbanicity batch results should be saved
+output_fp <- "C:/Users/tmbar/OneDrive - Duke University/Active Projects/pecahn/ref_pts_results"
+
+# uncomment and run if needed to authenticate your Google Earth Engine API
+#ee_Authenticate(auth_mode = "localhost")
+
+```
+
+## Loading Packages
+```{r setup}
+library(pecahnurbanicity)
+library(tidyverse)
+library(reticulate)
+library(rgee)
+```
+
+## Writing a function to batch and save results 
+Calls in chunks of 5 rows, saving intermediate results so an OSM failure mid-loop doesn't wipe your progress. 
+
+- Creates 1 km local and 5km regional bounding boxes
+- Computes "all" metrics
+
+```{r compute_urbanicity_batched function}
+compute_urbanicity_batched <- function(df, ee_project, year_or_years, 
+                                        batch_size = 5, 
+                                        save_prefix = NULL) {
+  n <- nrow(df)
+  batch_starts <- seq(1, n, by = batch_size)
+  all_results <- list()
+  
+  for (i in seq_along(batch_starts)) {
+    start_idx <- batch_starts[i]
+    end_idx   <- min(start_idx + batch_size - 1, n)
+    
+    cat(sprintf("[Batch %d/%d] Rows %d–%d of %d\n", 
+                i, length(batch_starts), start_idx, end_idx, n))
+    
+    df_batch <- df[start_idx:end_idx, ]
+    
+    tryCatch({
+      bbox_1km_batch <- create_bounding_boxes(df_batch, distance_km = 1)
+      bbox_5km_batch <- create_bounding_boxes(df_batch, distance_km = 5)
+      
+      result_batch <- compute_urbanicity_iterative(
+        local_bboxes          = bbox_1km_batch,
+        regional_bboxes       = bbox_5km_batch,
+        metrics               = "all",
+        ee_project            = ee_project,
+        search_buffer         = 1,
+        population_years      = year_or_years,
+        nighttime_light_years = year_or_years,
+        verbose               = TRUE
+      )
+      
+      all_results[[i]] <- result_batch
+      
+      # Optional: save each batch to disk immediately as insurance
+      if (!is.null(save_prefix)) {
+        saveRDS(result_batch, 
+                file = sprintf("%s_batch_%03d.rds", save_prefix, i))
+        cat(sprintf("  -> Saved batch %d to disk\n", i))
+      }
+      
+    }, error = function(e) {
+      cat(sprintf("  [ERROR] Batch %d failed: %s\n", i, conditionMessage(e)))
+      # Store NULL with a note so we know which batch failed
+      all_results[[i]] <<- NULL  
+    })
+  }
+  
+  # Bind all successful batches
+  successful <- Filter(Negate(is.null), all_results)
+  if (length(successful) == 0) {
+    warning("All batches failed — returning NULL")
+    return(NULL)
+  }
+  
+  bound <- bind_rows(successful)
+  cat(sprintf("Done. %d/%d batches succeeded (%d rows total).\n",
+              length(successful), length(batch_starts), nrow(bound)))
+  return(bound)
+}
+```
+
+## Getting Google Earth Engine ready
+Update code as needed for your machine/project. This is the code I use for my device (Apple)
+
+```{r GE_Engine}
+ee <- reticulate::import("ee")
+ee$Initialize(project = paste0(ee_project_name))
+```
+
+## Wrangling reference coordinate set to match expected input for compute_urbanicity_iterative()
+```{r wrangling}
+
+reference_coordinate_set <- read.csv(reference_coordinate_set_fp)
+
+reference_coordinate_set <- reference_coordinate_set |> 
+  rename(project = Classified) |> 
+  mutate(community = paste0(lat, ", ", lon)) |> 
+  mutate(project = case_when(
+    project == 11 ~ "Very Low Density Grid Cell",
+    project == 12 ~ "Low Density Rural Grid Cell",
+    project == 13 ~ "Rural Cluster",
+    project == 21 ~ "Suburban Grid Cell",
+    project == 22 ~ "Semi-Dense Urban Cluster",
+    project == 23 ~ "Dense Urban Cluster",
+    project == 30 ~ "Urban Center",
+    .default = NA
+  ))
+
+reference_coordinate_set_1<- reference_coordinate_set |> 
+  filter(project=="Very Low Density Grid Cell") |> 
+  select(project, community, lat, lon)
+
+reference_coordinate_set_2<- reference_coordinate_set |> 
+  filter(project=="Low Density Rural Grid Cell") |> 
+  select(project, community, lat, lon)
+
+reference_coordinate_set_3<- reference_coordinate_set |> 
+  filter(project=="Rural Cluster") |> 
+  select(project, community, lat, lon)
+
+reference_coordinate_set_4<- reference_coordinate_set |> 
+  filter(project=="Suburban Grid Cell") |> 
+  select(project, community, lat, lon)
+
+reference_coordinate_set_5<- reference_coordinate_set |> 
+  filter(project=="Semi-Dense Urban Cluster") |> 
+  select(project, community, lat, lon)
+
+reference_coordinate_set_6<- reference_coordinate_set |> 
+  filter(project=="Dense Urban Cluster") |> 
+  select(project, community, lat, lon)
+
+reference_coordinate_set_7<- reference_coordinate_set |> 
+  filter(project=="Urban Center") |> 
+  select(project, community, lat, lon)
+
+```
+
+## Running urbanicity metrics: Very Low Density Grid Cell
+```{r compute_urbanictiy_1}
+results_1 <- compute_urbanicity_batched(
+  df          = reference_coordinate_set_1,
+  ee_project  = ee_project_name,
+  year_or_years = year_or_years,
+  batch_size  = 5,
+  save_prefix = paste0(output_fp, "subset1") 
+)
+
+```
+
+
+## Running urbanicity metrics: Low Density Rural Grid Cell
+```{r compute_urbanictiy_2}
+results_2 <- compute_urbanicity_batched(
+  df          = reference_coordinate_set_2,
+  ee_project  = ee_project_name,
+  year_or_years = year_or_years,
+  batch_size  = 5,
+  save_prefix = paste0(output_fp, "subset2") 
+)
+
+```
+
+
+## Running urbanicity metrics: Rural Cluster
+```{r compute_urbanictiy_3}
+results_3 <- compute_urbanicity_batched(
+  df          = reference_coordinate_set_3,
+  ee_project  = ee_project_name,
+  year_or_years = year_or_years,
+  batch_size  = 5,
+  save_prefix = paste0(output_fp, "subset3") 
+)
+```
+
+
+## Running urbanicity metrics: Suburban Grid Cell
+```{r compute_urbanictiy_4}
+results_4 <- compute_urbanicity_batched(
+  df          = reference_coordinate_set_4,
+  ee_project  = ee_project_name,
+  year_or_years = year_or_years,
+  batch_size  = 5,
+  save_prefix = paste0(output_fp, "subset4") 
+)
+
+```
+
+
+## Running urbanicity metrics: Semi-Dense Urban Cluster
+```{r compute_urbanictiy_5}
+results_5 <- compute_urbanicity_batched(
+  df          = reference_coordinate_set_5,
+  ee_project  = ee_project_name,
+  year_or_years = year_or_years,
+  batch_size  = 5,
+  save_prefix = paste0(output_fp, "subset5")
+)
+```
+
+## Running urbanicity metrics: Dense Urban Center
+```{r compute_urbanictiy_6}
+results_6 <- compute_urbanicity_batched(
+  df          = reference_coordinate_set_6,
+  ee_project  = ee_project_name,
+  year_or_years = year_or_years,
+  batch_size  = 5,
+  save_prefix = paste0(output_fp, "subset6") 
+)
+
+```
+
+
+## Running urbanicity metrics: Urban Center
+```{r compute_urbanictiy_7}
+results_7 <- compute_urbanicity_batched(
+  df          = reference_coordinate_set_7,
+  ee_project  = ee_project_name,
+  year_or_years = year_or_years,
+  batch_size  = 5,
+  save_prefix = paste0(output_fp, "subset7") 
+)
+
+
+```

@@ -19,6 +19,11 @@
 #' friction surface, computes least-cost path distances using `gdistance::costDistance()`,
 #' and returns the minimum finite value.
 #'
+#' If the origin or *every* destination falls outside the friction grid (e.g. a feature
+#' beyond the raster's coverage), `gdistance::costDistance()` errors. That case is caught
+#' and reported as `NA` ("unreachable on this friction surface") rather than propagating,
+#' so callers can fall back to a boundary-distance estimate instead of aborting.
+#'
 #' @examples
 #' \dontrun{
 #' time_min <- calculate_travel_time(from_point = origin_sf,
@@ -42,10 +47,16 @@ calculate_travel_time <- function(from_point, to_points, tr_corrected, raster_cr
   from_coords <- sf::st_coordinates(from_sp)
   to_coords   <- sf::st_coordinates(to_sp)
   
-  # Compute cost-distance
-  cost_dist <- gdistance::costDistance(tr_corrected, from_coords[1, ], to_coords)
+  # Compute cost-distance. costDistance() drops off-grid points (with a warning)
+  # and errors outright ("replacement has length zero") when the origin or *all*
+  # destinations are off-grid. Treat either as unreachable -> NA so the caller can
+  # fall back to a boundary-distance estimate instead of aborting the whole metric.
+  cost_dist <- tryCatch(
+    suppressWarnings(gdistance::costDistance(tr_corrected, from_coords[1, ], to_coords)),
+    error = function(e) NA_real_
+  )
   min_time  <- suppressWarnings(min(cost_dist, na.rm = TRUE))
-  
+
   # Return minimum time if finite, otherwise NA
   if (is.finite(min_time)) min_time else NA_real_
 }

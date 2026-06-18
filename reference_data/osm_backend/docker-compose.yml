@@ -1,0 +1,14 @@
+services:
+  overpass:
+    image: wiktorn/overpass-api
+    container_name: overpass_local
+    environment:
+      OVERPASS_MODE: init
+      OVERPASS_META: "no"
+      OVERPASS_PLANET_URL: file:///db/planet-pecahn.osm.pbf
+      OVERPASS_COMPRESSION: gz
+      OVERPASS_PLANET_PREPROCESS: 'mv /db/planet.osm.bz2 /db/planet.osm.pbf && osmium cat -o /db/planet.osm.bz2 /db/planet.osm.pbf && rm /db/planet.osm.pbf'
+    volumes:
+      - ./overpass_db:/db
+    ports:
+      - "12345:80"
