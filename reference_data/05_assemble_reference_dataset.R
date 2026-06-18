@@ -56,8 +56,8 @@ library(dplyr)
 	cat(sprintf("Loaded %d batch file(s) -> %d community rows.\n",
 		length(rds_files), nrow(results)))
 
-#	Fold in the targeted re-run of the off-grid / masked points
-#	(rerun_problem_points.R). For any community present in the rerun file, drop the
+#	Fold in the targeted re-run of the off-grid / masked points.
+# For any community present in the rerun file, drop the
 #	stale (NA) original row and keep the recovered one. Skipped if no rerun file.
 	RERUN_RDS <- file.path(RESULTS_DIR, "ref_pts_results_rerun.rds")
 	if (file.exists(RERUN_RDS)) {
