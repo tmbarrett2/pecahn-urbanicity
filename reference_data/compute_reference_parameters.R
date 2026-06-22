@@ -2,7 +2,7 @@
 # refence_data/compute_reference_params.R
 #
 # Generates the internal standardization parameters used by
-# compute_urban_index() to anchor urbanicity scores to the PEcAHN global
+# compute_urbanicity_composite_index() to anchor urbanicity scores to the PEcAHN global
 # reference distribution.
 #
 # WHEN TO RUN THIS SCRIPT
@@ -220,7 +220,7 @@ minmax_params <- .compute_params(ref, resolved_cols, ref_key_map, "minmax")
 # ------------------------------------------------------------------------------
 # 5. Assemble the internal object
 #
-# .urbanicity_ref_params is the object loaded at runtime by compute_urban_index().
+# .urbanicity_ref_params is the object loaded at runtime by compute_urbanicity_composite_index().
 # The leading dot makes it invisible to users (ls() skips dot-names by default)
 # while remaining accessible within package functions.
 #
