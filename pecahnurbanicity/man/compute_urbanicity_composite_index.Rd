@@ -9,6 +9,7 @@ compute_urbanicity_composite_index(
   features = c("pct_paved_roads", "travel_time_hospital_min", "travel_time_school_min",
     "travel_time_urban_center_min", "nighttime_light", "pop_density"),
   method = c("zscore", "minmax"),
+  clamp = TRUE,
   min_features = 6L,
   cor_warning = TRUE,
   cor_threshold = 0.7,
@@ -20,136 +21,161 @@ compute_urbanicity_composite_index(
 \arguments{
 \item{data}{A \code{data.frame} with one row per community, as returned by
 \code{\link[=compute_urbanicity]{compute_urbanicity()}} or \code{\link[=compute_urbanicity_iterative]{compute_urbanicity_iterative()}}. Must contain
-at least some of the core feature columns listed above.
-Multi-year columns (e.g., \code{nighttime_light_2015}, \code{pop_density_2020}) are
-automatically detected and averaged prior to standardization.}
+at least some of the core feature columns listed above. For multi-year
+variables, supply either a bare column (e.g., \code{nighttime_light}) or
+year-suffixed columns (e.g., \code{nighttime_light_2022}, \code{nighttime_light_2024});
+the most recent year present is used automatically. The year in \code{data} does
+not need to match the year used when building the reference parameters.}
 
 \item{features}{Optional character vector of column name stubs to include in
 the composite. Defaults to all six core features. Use stubs (e.g.,
-\code{"nighttime_light"}) for multi-year variables -- all matching yearly columns
-will be averaged automatically.}
+\code{"nighttime_light"}) for multi-year variables — the most recent available
+year column is selected automatically.}
 
 \item{method}{Character string specifying the standardization method.
 One of:
 \describe{
-\item{\code{"zscore"}}{(default) Each feature is z-score standardized
-(mean = 0, SD = 1). The composite is the row-wise mean of z-scores,
-interpretable as the average standardized deviation from the sample
-mean across features.}
-\item{\code{"minmax"}}{Each feature is min-max normalized to [0, 1].
-The composite is the row-wise mean of normalized values (0-1 scale).}
+\item{\code{"zscore"}}{(default) Each feature is standardized using the
+reference mean and SD. The composite is the row-wise mean of z-scores,
+interpretable as standard deviations above/below the global reference
+mean.}
+\item{\code{"minmax"}}{Each feature is normalized to [0, 1] using the
+reference min and max. Input values outside the reference range are
+clamped to [0, 1] with a warning (see \code{clamp}).}
 }}
 
+\item{clamp}{Logical; only relevant when \code{method = "minmax"}. If \code{TRUE}
+(default), input values outside the reference [min, max] range are
+clamped to [0, 1] with a warning. If \code{FALSE}, out-of-range values
+produce scores outside [0, 1], preserving their relative position on
+the global scale.}
+
 \item{min_features}{Integer; minimum number of non-missing features required
-to compute a composite score. Communities with fewer non-missing features
-than this threshold receive \code{NA} with a warning (default \code{6L}).}
+to compute a composite score. Communities below this threshold receive
+\code{NA} with a warning (default \code{6L}).}
 
-\item{cor_warning}{Logical; if \code{TRUE}, prints a warning for any pair of
-features with Pearson |r| >= \code{cor_threshold}, which may indicate implicit
-double-weighting of a shared dimension (default \code{TRUE}).}
+\item{cor_warning}{Logical; if \code{TRUE}, warns when any feature pair has
+Pearson |r| >= \code{cor_threshold} in \code{data} (default \code{TRUE}).}
 
-\item{cor_threshold}{Numeric; correlation threshold above which a warning
-is issued (default \code{0.7}). Only used when \code{cor_warning = TRUE}.}
+\item{cor_threshold}{Numeric; correlation threshold for the collinearity
+warning (default \code{0.7}). Only used when \code{cor_warning = TRUE}.}
 
 \item{suffix}{Character string naming the output composite column
 (default \code{"urban_index"}).}
 
 \item{keep_standardized}{Logical; if \code{TRUE}, the standardized version of
-each feature is appended to the returned data frame for inspection
-(default \code{FALSE}). Columns are suffixed \verb{_z} (z-score) or \verb{_norm}
-(min-max).}
+each feature is appended to the returned data frame (default \code{FALSE}).
+Columns are suffixed \verb{_z} (z-score) or \verb{_norm} (min-max).}
 
-\item{verbose}{Logical; if \code{TRUE}, prints progress and diagnostics
-(default \code{FALSE}).}
+\item{verbose}{Logical; if \code{TRUE}, prints per-feature diagnostics including
+the resolved column name, reference parameters used, and whether the
+feature was reverse-coded (default \code{FALSE}).}
 }
 \value{
 The input \code{data.frame} with the following columns appended:
-\itemize{
-\item \code{urban_index} -- composite urbanicity score computed as the row-wise mean
-of standardized feature values. For \code{method = "zscore"}, this is the mean
-z-score across features (unbounded, mean of 0 across communities, higher =
-more urban). For \code{method = "minmax"}, this is the mean normalized value
-(0-1, higher = more urban).
-\item \code{n_features_used} -- integer count of non-missing features that contributed
-to each community's score. Communities below \code{min_features} receive \code{NA}.
-\item Intermediate averaged columns (e.g., \code{nighttime_light_mean},
-\code{pop_density_mean}) are added when multi-year data are detected.
-\item If \code{keep_standardized = TRUE}, standardized columns are appended with
-suffix \verb{_z} or \verb{_norm} depending on \code{method}.
+\describe{
+\item{\code{urban_index}}{Composite urbanicity score (row-wise mean of
+standardized features). Higher values = more urban. For
+\code{method = "zscore"}, units are standard deviations from the global
+reference mean. For \code{method = "minmax"}, scores are on a [0, 1]
+scale anchored to the global reference range.}
+\item{\code{n_features_used}}{Integer count of non-missing features that
+contributed to each community's composite score. Communities below
+\code{min_features} receive \code{NA}.}
 }
+If \code{keep_standardized = TRUE}, per-feature standardized columns are
+appended with suffix \verb{_z} (z-score) or \verb{_norm} (min-max).
 }
 \description{
 Computes a composite urbanicity index across a set of core features using
-either z-score standardization or min-max normalization. The composite is
-always computed as the row-wise mean of standardized  feature values.
-Travel time variables are reverse-coded so that higher scores
-consistently reflect greater urbanicity (i.e., shorter travel times = higher
-score). Multi-year variables (nighttime light, population density) are
-averaged across available years before standardization when applicable.
+either z-score standardization or min-max normalization. Standardization
+parameters are always derived from the PEcAHN global reference dataset
+(1,400 globally stratified communities) pre-computed at package build time,
+anchoring scores to a fixed global scale that is comparable across study
+sites, datasets, and future data collection waves.
+
+The composite score is the row-wise mean of standardized feature values.
+Travel time variables are reverse-coded so that higher scores consistently
+reflect greater urbanicity (shorter travel times = higher score). For
+multi-year variables (nighttime light, population density), the most recent
+available year column is used automatically. Reference parameters for these
+features are keyed by stub name (e.g., \code{"nighttime_light"}) rather than
+by year, so input data from any year is correctly standardized
+against the reference distribution regardless of which year the reference
+was built from.
 
 Core features included in the composite:
-\itemize{
-\item \code{pct_paved_roads} -- percent of roads that are paved (higher = more urban)
-\item \code{travel_time_hospital_min} -- travel time to nearest hospital (lower = more urban)
-\item \code{travel_time_school_min} -- travel time to nearest school (lower = more urban)
-\item \code{travel_time_urban_center_min} -- travel time to nearest urban center (lower = more urban)
-\item \code{nighttime_light} -- mean nighttime light intensity, averaged across years if multiple years are included (higher = more urban)
-\item \code{pop_density} -- population density, averaged across years if multiple years are included (higher = more urban)
+\describe{
+\item{\code{pct_paved_roads}}{Percent of roads that are paved (higher = more urban)}
+\item{\code{travel_time_hospital_min}}{Travel time to nearest hospital in minutes (lower = more urban, reverse-coded)}
+\item{\code{travel_time_school_min}}{Travel time to nearest school in minutes (lower = more urban, reverse-coded)}
+\item{\code{travel_time_urban_center_min}}{Travel time to nearest urban center (lower = more urban, reverse-coded)}
+\item{\code{nighttime_light}}{Nighttime light intensity, most recent year available (higher = more urban)}
+\item{\code{pop_density}}{Population density, most recent year available (higher = more urban)}
 }
 }
 \details{
-\strong{Z-score method (\code{method = "zscore"}):}
-Each feature is standardized as:
-\deqn{z = \frac{x - \bar{x}}{s}}
-where \eqn{\bar{x}} is the sample mean and \eqn{s} is the sample standard
-deviation. The composite is the row-wise mean of z-scores:
-\deqn{\text{urban\_index}_i = \frac{1}{K_i} \sum_{k=1}^{K_i} z_{ik}}
-where \eqn{K_i} is the number of non-missing features for community \eqn{i}.
-Features with zero variance are excluded with a warning.
+\subsection{Reference-anchored standardization}{
 
-\strong{Min-max method (\code{method = "minmax"}):}
-Each feature is normalized as:
-\deqn{x_{norm} = \frac{x - \min(x)}{\max(x) - \min(x)}}
-The composite is the row-wise mean of normalized values. Sample-dependent:
-adding or removing communities changes all scores.
+Standardization parameters are pre-computed from the PEcAHN global
+reference dataset at package build time and stored internally. This means:
 
-\strong{Direction:} Travel time variables are reverse-coded after standardization
-so that higher scores uniformly indicate greater urbanicity. For z-scores,
-the sign is negated (\code{-z}); for min-max, the value is flipped (\code{1 - x_norm}).
+\enumerate{
+\item \strong{Fixed scale.} The parameters never change based on the
+composition of \code{data}. Adding or removing communities from your study
+dataset does not shift scores.
+\item \strong{Cross-site comparability.} Urbanicity scores computed for
+different field sites, at different times, or with different sample
+sizes are directly comparable.
+\item \strong{Year-agnostic multi-year lookup.} Reference parameters for
+\code{nighttime_light} and \code{pop_density} are stored under their stub names,
+not the specific year used when building the reference. Input data
+from any collection year is correctly matched.
+}
 
-\strong{Missing data:} The composite is the mean of available standardized
-features per community. Communities with fewer than \code{min_features} non-missing
-features receive \code{NA}.
+To inspect the reference parameters (including which year was used to
+build them), call \code{\link[=urbanicity_ref_params]{urbanicity_ref_params()}}.
+}
 
-\strong{Correlation diagnostics:} When \code{cor_warning = TRUE}, feature pairs with
-|r| >= \code{cor_threshold} are flagged. Highly correlated features effectively
-upweight a shared latent dimension. Consider removing redundant features or
-using PCA-based weighting if collinearity is severe.
+\subsection{Z-score method (\code{method = "zscore"})}{
+
+\deqn{z_i = \frac{x_i - \mu_{ref}}{\sigma_{ref}}}
+Composite: \eqn{\text{urban\_index}_i = \frac{1}{K_i} \sum_k z_{ik}}
+}
+
+\subsection{Min-max method (\code{method = "minmax"})}{
+
+\deqn{x_{norm,i} = \frac{x_i - \min_{ref}}{\max_{ref} - \min_{ref}}}
+}
+
+\subsection{Multi-year variables}{
+
+For \code{nighttime_light} and \code{pop_density}, if year-suffixed columns are
+present (e.g., \code{nighttime_light_2020}, \code{nighttime_light_2024}), the column
+with the highest year suffix is selected. A bare column (e.g.,
+\code{nighttime_light}) is used if no year-suffixed columns exist. The resolved
+column is always looked up in the reference parameters under the stub name
+(e.g., \code{"nighttime_light"}), so the year in \code{data} never needs to match
+the year the reference was built from.
+}
 }
 \examples{
 \dontrun{
-# Earth Engine must be authenticated first: rgee::ee_Initialize()
-results <- compute_urbanicity_iterative(
-  communities           = community_list,
-  ee_project            = "my-gcp-project",
-  population_years      = c(2015, 2020),
-  nighttime_light_years = c(2015, 2020)
-)
+# Z-score composite (default, recommended)
+results_indexed <- compute_urbanicity_composite_index(results)
 
-# Z-score composite (recommended)
-results_indexed <- compute_urban_index(results)
+# Min-max composite with clamping
+results_indexed <- compute_urbanicity_composite_index(results, method = "minmax", clamp = TRUE)
 
-# Min-max composite
-results_indexed <- compute_urban_index(results, method = "minmax")
+# Inspect standardized feature scores
+results_indexed <- compute_urbanicity_composite_index(results, keep_standardized = TRUE)
 
-# Require at least 5 features for a valid score
-results_indexed <- compute_urban_index(results, min_features = 5)
-
-# Inspect standardized components
-results_indexed <- compute_urban_index(results, keep_standardized = TRUE)
+# Check what reference parameters are being used
+urbanicity_ref_params()
 }
 
 }
 \seealso{
-\code{\link[=compute_urbanicity]{compute_urbanicity()}}, \code{\link[=compute_urbanicity_iterative]{compute_urbanicity_iterative()}}
+\code{\link[=compute_urbanicity]{compute_urbanicity()}}, \code{\link[=compute_urbanicity_iterative]{compute_urbanicity_iterative()}},
+\code{\link[=urbanicity_ref_params]{urbanicity_ref_params()}}
 }

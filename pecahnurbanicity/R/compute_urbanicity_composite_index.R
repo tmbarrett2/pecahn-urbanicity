@@ -2,126 +2,147 @@
 #'
 #' @description
 #' Computes a composite urbanicity index across a set of core features using
-#' either z-score standardization or min-max normalization. The composite is
-#' always computed as the row-wise mean of standardized  feature values.
-#' Travel time variables are reverse-coded so that higher scores
-#' consistently reflect greater urbanicity (i.e., shorter travel times = higher
-#' score). Multi-year variables (nighttime light, population density) are
-#' averaged across available years before standardization when applicable.
+#' either z-score standardization or min-max normalization. Standardization
+#' parameters are always derived from the PEcAHN global reference dataset
+#' (1,400 globally stratified communities) pre-computed at package build time,
+#' anchoring scores to a fixed global scale that is comparable across study
+#' sites, datasets, and future data collection waves.
+#'
+#' The composite score is the row-wise mean of standardized feature values.
+#' Travel time variables are reverse-coded so that higher scores consistently
+#' reflect greater urbanicity (shorter travel times = higher score). For
+#' multi-year variables (nighttime light, population density), the most recent
+#' available year column is used automatically. Reference parameters for these
+#' features are keyed by stub name (e.g., \code{"nighttime_light"}) rather than
+#' by year, so input data from any year is correctly standardized
+#' against the reference distribution regardless of which year the reference
+#' was built from.
 #'
 #' Core features included in the composite:
-#' - `pct_paved_roads` -- percent of roads that are paved (higher = more urban)
-#' - `travel_time_hospital_min` -- travel time to nearest hospital (lower = more urban)
-#' - `travel_time_school_min` -- travel time to nearest school (lower = more urban)
-#' - `travel_time_urban_center_min` -- travel time to nearest urban center (lower = more urban)
-#' - `nighttime_light` -- mean nighttime light intensity, averaged across years if multiple years are included (higher = more urban)
-#' - `pop_density` -- population density, averaged across years if multiple years are included (higher = more urban)
+#' \describe{
+#'   \item{`pct_paved_roads`}{Percent of roads that are paved (higher = more urban)}
+#'   \item{`travel_time_hospital_min`}{Travel time to nearest hospital in minutes (lower = more urban, reverse-coded)}
+#'   \item{`travel_time_school_min`}{Travel time to nearest school in minutes (lower = more urban, reverse-coded)}
+#'   \item{`travel_time_urban_center_min`}{Travel time to nearest urban center (lower = more urban, reverse-coded)}
+#'   \item{`nighttime_light`}{Nighttime light intensity, most recent year available (higher = more urban)}
+#'   \item{`pop_density`}{Population density, most recent year available (higher = more urban)}
+#' }
 #'
 #' @param data A `data.frame` with one row per community, as returned by
 #'   [compute_urbanicity()] or [compute_urbanicity_iterative()]. Must contain
-#'   at least some of the core feature columns listed above.
-#'   Multi-year columns (e.g., `nighttime_light_2015`, `pop_density_2020`) are
-#'   automatically detected and averaged prior to standardization.
+#'   at least some of the core feature columns listed above. For multi-year
+#'   variables, supply either a bare column (e.g., `nighttime_light`) or
+#'   year-suffixed columns (e.g., `nighttime_light_2022`, `nighttime_light_2024`);
+#'   the most recent year present is used automatically. The year in `data` does
+#'   not need to match the year used when building the reference parameters.
 #' @param features Optional character vector of column name stubs to include in
 #'   the composite. Defaults to all six core features. Use stubs (e.g.,
-#'   `"nighttime_light"`) for multi-year variables -- all matching yearly columns
-#'   will be averaged automatically.
+#'   `"nighttime_light"`) for multi-year variables — the most recent available
+#'   year column is selected automatically.
 #' @param method Character string specifying the standardization method.
 #'   One of:
 #'   \describe{
-#'     \item{`"zscore"`}{(default) Each feature is z-score standardized
-#'       (mean = 0, SD = 1). The composite is the row-wise mean of z-scores,
-#'       interpretable as the average standardized deviation from the sample
-#'       mean across features.}
-#'     \item{`"minmax"`}{Each feature is min-max normalized to \[0, 1\].
-#'       The composite is the row-wise mean of normalized values (0-1 scale).}
+#'     \item{`"zscore"`}{(default) Each feature is standardized using the
+#'       reference mean and SD. The composite is the row-wise mean of z-scores,
+#'       interpretable as standard deviations above/below the global reference
+#'       mean.}
+#'     \item{`"minmax"`}{Each feature is normalized to \[0, 1\] using the
+#'       reference min and max. Input values outside the reference range are
+#'       clamped to \[0, 1\] with a warning (see `clamp`).}
 #'   }
+#' @param clamp Logical; only relevant when `method = "minmax"`. If `TRUE`
+#'   (default), input values outside the reference \[min, max\] range are
+#'   clamped to \[0, 1\] with a warning. If `FALSE`, out-of-range values
+#'   produce scores outside \[0, 1\], preserving their relative position on
+#'   the global scale.
 #' @param min_features Integer; minimum number of non-missing features required
-#'   to compute a composite score. Communities with fewer non-missing features
-#'   than this threshold receive `NA` with a warning (default `6L`).
-#' @param cor_warning Logical; if `TRUE`, prints a warning for any pair of
-#'   features with Pearson |r| >= `cor_threshold`, which may indicate implicit
-#'   double-weighting of a shared dimension (default `TRUE`).
-#' @param cor_threshold Numeric; correlation threshold above which a warning
-#'   is issued (default `0.7`). Only used when `cor_warning = TRUE`.
+#'   to compute a composite score. Communities below this threshold receive
+#'   `NA` with a warning (default `6L`).
+#' @param cor_warning Logical; if `TRUE`, warns when any feature pair has
+#'   Pearson |r| >= `cor_threshold` in `data` (default `TRUE`).
+#' @param cor_threshold Numeric; correlation threshold for the collinearity
+#'   warning (default `0.7`). Only used when `cor_warning = TRUE`.
 #' @param suffix Character string naming the output composite column
 #'   (default `"urban_index"`).
 #' @param keep_standardized Logical; if `TRUE`, the standardized version of
-#'   each feature is appended to the returned data frame for inspection
-#'   (default `FALSE`). Columns are suffixed `_z` (z-score) or `_norm`
-#'   (min-max).
-#' @param verbose Logical; if `TRUE`, prints progress and diagnostics
-#'   (default `FALSE`).
+#'   each feature is appended to the returned data frame (default `FALSE`).
+#'   Columns are suffixed `_z` (z-score) or `_norm` (min-max).
+#' @param verbose Logical; if `TRUE`, prints per-feature diagnostics including
+#'   the resolved column name, reference parameters used, and whether the
+#'   feature was reverse-coded (default `FALSE`).
 #'
 #' @return
 #' The input `data.frame` with the following columns appended:
-#' - `urban_index` -- composite urbanicity score computed as the row-wise mean
-#'   of standardized feature values. For `method = "zscore"`, this is the mean
-#'   z-score across features (unbounded, mean of 0 across communities, higher =
-#'   more urban). For `method = "minmax"`, this is the mean normalized value
-#'   (0-1, higher = more urban).
-#' - `n_features_used` -- integer count of non-missing features that contributed
-#'   to each community's score. Communities below `min_features` receive `NA`.
-#' - Intermediate averaged columns (e.g., `nighttime_light_mean`,
-#'   `pop_density_mean`) are added when multi-year data are detected.
-#' - If `keep_standardized = TRUE`, standardized columns are appended with
-#'   suffix `_z` or `_norm` depending on `method`.
+#' \describe{
+#'   \item{`urban_index`}{Composite urbanicity score (row-wise mean of
+#'     standardized features). Higher values = more urban. For
+#'     `method = "zscore"`, units are standard deviations from the global
+#'     reference mean. For `method = "minmax"`, scores are on a \[0, 1\]
+#'     scale anchored to the global reference range.}
+#'   \item{`n_features_used`}{Integer count of non-missing features that
+#'     contributed to each community's composite score. Communities below
+#'     `min_features` receive `NA`.}
+#' }
+#' If `keep_standardized = TRUE`, per-feature standardized columns are
+#' appended with suffix `_z` (z-score) or `_norm` (min-max).
 #'
 #' @details
-#' **Z-score method (`method = "zscore"`):**
-#' Each feature is standardized as:
-#' \deqn{z = \frac{x - \bar{x}}{s}}
-#' where \eqn{\bar{x}} is the sample mean and \eqn{s} is the sample standard
-#' deviation. The composite is the row-wise mean of z-scores:
-#' \deqn{\text{urban\_index}_i = \frac{1}{K_i} \sum_{k=1}^{K_i} z_{ik}}
-#' where \eqn{K_i} is the number of non-missing features for community \eqn{i}.
-#' Features with zero variance are excluded with a warning.
+#' ## Reference-anchored standardization
 #'
-#' **Min-max method (`method = "minmax"`):**
-#' Each feature is normalized as:
-#' \deqn{x_{norm} = \frac{x - \min(x)}{\max(x) - \min(x)}}
-#' The composite is the row-wise mean of normalized values. Sample-dependent:
-#' adding or removing communities changes all scores.
+#' Standardization parameters are pre-computed from the PEcAHN global
+#' reference dataset at package build time and stored internally. This means:
 #'
-#' **Direction:** Travel time variables are reverse-coded after standardization
-#' so that higher scores uniformly indicate greater urbanicity. For z-scores,
-#' the sign is negated (`-z`); for min-max, the value is flipped (`1 - x_norm`).
+#' \enumerate{
+#'   \item **Fixed scale.** The parameters never change based on the
+#'     composition of `data`. Adding or removing communities from your study
+#'     dataset does not shift scores.
+#'   \item **Cross-site comparability.** Urbanicity scores computed for
+#'     different field sites, at different times, or with different sample
+#'     sizes are directly comparable.
+#'   \item **Year-agnostic multi-year lookup.** Reference parameters for
+#'     `nighttime_light` and `pop_density` are stored under their stub names,
+#'     not the specific year used when building the reference. Input data
+#'     from any collection year is correctly matched.
+#' }
 #'
-#' **Missing data:** The composite is the mean of available standardized
-#' features per community. Communities with fewer than `min_features` non-missing
-#' features receive `NA`.
+#' To inspect the reference parameters (including which year was used to
+#' build them), call [urbanicity_ref_params()].
 #'
-#' **Correlation diagnostics:** When `cor_warning = TRUE`, feature pairs with
-#' |r| >= `cor_threshold` are flagged. Highly correlated features effectively
-#' upweight a shared latent dimension. Consider removing redundant features or
-#' using PCA-based weighting if collinearity is severe.
+#' ## Z-score method (`method = "zscore"`)
+#' \deqn{z_i = \frac{x_i - \mu_{ref}}{\sigma_{ref}}}
+#' Composite: \eqn{\text{urban\_index}_i = \frac{1}{K_i} \sum_k z_{ik}}
+#'
+#' ## Min-max method (`method = "minmax"`)
+#' \deqn{x_{norm,i} = \frac{x_i - \min_{ref}}{\max_{ref} - \min_{ref}}}
+#'
+#' ## Multi-year variables
+#' For `nighttime_light` and `pop_density`, if year-suffixed columns are
+#' present (e.g., `nighttime_light_2020`, `nighttime_light_2024`), the column
+#' with the highest year suffix is selected. A bare column (e.g.,
+#' `nighttime_light`) is used if no year-suffixed columns exist. The resolved
+#' column is always looked up in the reference parameters under the stub name
+#' (e.g., `"nighttime_light"`), so the year in `data` never needs to match
+#' the year the reference was built from.
 #'
 #' @examples
 #' \dontrun{
-#' # Earth Engine must be authenticated first: rgee::ee_Initialize()
-#' results <- compute_urbanicity_iterative(
-#'   communities           = community_list,
-#'   ee_project            = "my-gcp-project",
-#'   population_years      = c(2015, 2020),
-#'   nighttime_light_years = c(2015, 2020)
-#' )
+#' # Z-score composite (default, recommended)
+#' results_indexed <- compute_urbanicity_composite_index(results)
 #'
-#' # Z-score composite (recommended)
-#' results_indexed <- compute_urban_index(results)
+#' # Min-max composite with clamping
+#' results_indexed <- compute_urbanicity_composite_index(results, method = "minmax", clamp = TRUE)
 #'
-#' # Min-max composite
-#' results_indexed <- compute_urban_index(results, method = "minmax")
+#' # Inspect standardized feature scores
+#' results_indexed <- compute_urbanicity_composite_index(results, keep_standardized = TRUE)
 #'
-#' # Require at least 5 features for a valid score
-#' results_indexed <- compute_urban_index(results, min_features = 5)
-#'
-#' # Inspect standardized components
-#' results_indexed <- compute_urban_index(results, keep_standardized = TRUE)
+#' # Check what reference parameters are being used
+#' urbanicity_ref_params()
 #' }
 #'
-#' @seealso [compute_urbanicity()], [compute_urbanicity_iterative()]
+#' @seealso [compute_urbanicity()], [compute_urbanicity_iterative()],
+#'   [urbanicity_ref_params()]
 #'
-#' @importFrom stats cor sd aggregate
+#' @importFrom stats cor sd
 #' @export
 compute_urbanicity_composite_index <- function(data,
                                 features = c(
@@ -133,6 +154,7 @@ compute_urbanicity_composite_index <- function(data,
                                   "pop_density"
                                 ),
                                 method            = c("zscore", "minmax"),
+                                clamp             = TRUE,
                                 min_features      = 6L,
                                 cor_warning       = TRUE,
                                 cor_threshold     = 0.7,
@@ -142,17 +164,18 @@ compute_urbanicity_composite_index <- function(data,
 
   method <- match.arg(method)
 
-  # --- Input validation -------------------------------------------------------
   if (!is.data.frame(data)) stop("`data` must be a data.frame.")
-  if (nrow(data) < 2) {
-    warning(
-      "Cannot standardize with fewer than 2 rows. `urban_index` will be NA. ",
-      "Run compute_urbanicity_iterative() across multiple communities first."
-    )
+  if (nrow(data) < 1) {
+    warning("`data` has no rows. Returning unchanged.")
     data[[suffix]]            <- NA_real_
     data[["n_features_used"]] <- NA_integer_
     return(data)
   }
+
+  # .urbanicity_ref_params is loaded from R/sysdata.rda at package load time.
+  # Parameters for multi-year stubs are stored under the stub name
+  # (e.g., "nighttime_light"), never under a year-specific column name.
+  ref_params <- .urbanicity_ref_params[[method]]
 
   reverse_vars    <- c(
     "travel_time_paved_road_min",
@@ -163,51 +186,30 @@ compute_urbanicity_composite_index <- function(data,
   multiyear_stubs <- c("nighttime_light", "pop_density")
   std_suffix      <- if (method == "zscore") "_z" else "_norm"
 
-  # --- Resolve columns --------------------------------------------------------
-  resolved_cols <- character(0)
-
-  for (feat in features) {
-    if (feat %in% multiyear_stubs) {
-      pattern   <- paste0("^", feat, "_[0-9]{4}$")
-      year_cols <- grep(pattern, colnames(data), value = TRUE)
-
-      if (length(year_cols) == 0) {
-        if (feat %in% colnames(data)) {
-          resolved_cols <- c(resolved_cols, feat)
-          if (verbose) cat("  Using bare column:", feat, "\n")
-        } else {
-          warning("Feature '", feat, "' not found in data -- skipping.")
-        }
-        next
-      }
-
-      mean_col <- paste0(feat, "_mean")
-      year_matrix <- as.matrix(data[, year_cols, drop = FALSE])
-      storage.mode(year_matrix) <- "double"
-      data[[mean_col]] <- rowMeans(year_matrix, na.rm = TRUE)
-      data[[mean_col]][rowSums(!is.na(year_matrix)) == 0] <- NA_real_
-      resolved_cols <- c(resolved_cols, mean_col)
-      if (verbose) cat("  Averaged", length(year_cols), "year(s) for",
-                       feat, "->", mean_col, "\n")
-    } else {
-      if (feat %in% colnames(data)) {
-        resolved_cols <- c(resolved_cols, feat)
-      } else {
-        warning("Feature '", feat, "' not found in data -- skipping.")
-      }
-    }
-  }
+  # ---------------------------------------------------------------------------
+  # Resolve feature columns in `data`
+  # ---------------------------------------------------------------------------
+  resolved      <- .resolve_feature_cols(data, features, multiyear_stubs, verbose)
+  data          <- resolved$data
+  resolved_cols <- resolved$cols   # actual column names, e.g. "nighttime_light_2024"
+  stub_map      <- resolved$stubs  # named vector: col -> stub, e.g. "nighttime_light_2024" -> "nighttime_light"
 
   if (length(resolved_cols) == 0)
     stop("No valid feature columns found in `data`.")
 
-  # --- Correlation diagnostic -------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Correlation diagnostic
+  # ---------------------------------------------------------------------------
   if (cor_warning && length(resolved_cols) >= 2) {
     feat_matrix <- as.matrix(data[, resolved_cols, drop = FALSE])
     storage.mode(feat_matrix) <- "double"
-    cor_matrix  <- suppressWarnings(cor(feat_matrix, use = "pairwise.complete.obs"))
-    pairs       <- which(abs(cor_matrix) >= cor_threshold & upper.tri(cor_matrix),
-                         arr.ind = TRUE)
+    cor_matrix <- suppressWarnings(
+      cor(feat_matrix, use = "pairwise.complete.obs")
+    )
+    pairs <- which(
+      abs(cor_matrix) >= cor_threshold & upper.tri(cor_matrix),
+      arr.ind = TRUE
+    )
     if (nrow(pairs) > 0) {
       pair_strs <- apply(pairs, 1, function(idx) {
         sprintf("  %s & %s (r = %.2f)",
@@ -223,7 +225,9 @@ compute_urbanicity_composite_index <- function(data,
     }
   }
 
-  # --- Standardize features ---------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Standardize features
+  # ---------------------------------------------------------------------------
   std_cols <- character(0)
 
   for (col in resolved_cols) {
@@ -236,74 +240,204 @@ compute_urbanicity_composite_index <- function(data,
       next
     }
 
-    std_col    <- paste0(col, std_suffix)
+    # Always look up via stub so year mismatches between input and reference
+    # are never a problem (e.g. input has nighttime_light_2024, reference was
+    # built from nighttime_light_2025 -- both resolve to stub "nighttime_light")
+    ref_key <- stub_map[[col]]
+
+    if (!ref_key %in% names(ref_params)) {
+      warning(
+        "No reference parameters found for '", col, "' (stub: '", ref_key, "'). ",
+        "Excluding from composite. Ensure the feature is present in the PEcAHN ",
+        "reference dataset, then rebuild R/sysdata.rda."
+      )
+      next
+    }
+
+    center  <- ref_params[[ref_key]]$center
+    scale   <- ref_params[[ref_key]]$scale
+    std_col <- paste0(col, std_suffix)
+
     is_reverse <- any(sapply(reverse_vars, function(rv) startsWith(col, rv)))
 
     if (method == "zscore") {
-      x_mean <- mean(x, na.rm = TRUE)
-      x_sd   <- sd(x,   na.rm = TRUE)
-      if (x_sd == 0) {
-        warning("Feature '", col, "' has zero variance -- excluding from composite.")
-        next
-      }
-      z               <- (x - x_mean) / x_sd
+      z               <- (x - center) / scale
       data[[std_col]] <- if (is_reverse) -z else z
-      if (verbose) cat("  Z-scored:", col,
-                       if (is_reverse) "(reverse-coded)\n" else "\n")
 
     } else {
-      x_min <- min(x, na.rm = TRUE)
-      x_max <- max(x, na.rm = TRUE)
-      if ((x_max - x_min) == 0) {
-        warning("Feature '", col, "' has zero range -- excluding from composite.")
-        next
+      nm <- (x - center) / scale
+      if (clamp) {
+        n_below <- sum(nm < 0, na.rm = TRUE)
+        n_above <- sum(nm > 1, na.rm = TRUE)
+        if (n_below + n_above > 0) {
+          warning(
+            "Feature '", col, "': ", n_below, " value(s) below reference min ",
+            "and ", n_above, " value(s) above reference max. ",
+            "Clamping to [0, 1]. Set clamp = FALSE to allow out-of-range scores."
+          )
+          nm <- pmin(pmax(nm, 0), 1)
+        }
       }
-      nm              <- (x - x_min) / (x_max - x_min)
       data[[std_col]] <- if (is_reverse) 1 - nm else nm
-      if (verbose) cat("  Min-max normalized:", col,
-                       if (is_reverse) "(reverse-coded)\n" else "\n")
+    }
+
+    if (verbose) {
+      cat(sprintf(
+        "  %-40s  ref_key = %-30s  center = %8.3f  scale = %8.3f%s\n",
+        col, ref_key, center, scale,
+        if (is_reverse) "  (reverse-coded)" else ""
+      ))
     }
 
     std_cols <- c(std_cols, std_col)
   }
 
   if (length(std_cols) == 0)
-    stop("No features could be standardized. Check that columns contain numeric data.")
+    stop("No features could be standardized. Check that columns exist and ",
+         "contain numeric data matching the core feature set.")
 
-  # --- Composite: row-wise mean -------------------------------------
-  std_matrix  <- as.matrix(data[, std_cols, drop = FALSE])
+  # ---------------------------------------------------------------------------
+  # Composite: row-wise mean of standardized features
+  # ---------------------------------------------------------------------------
+  std_matrix            <- as.matrix(data[, std_cols, drop = FALSE])
   storage.mode(std_matrix) <- "double"
 
-  n_available         <- rowSums(!is.na(std_matrix))
-  data[[suffix]]      <- rowMeans(std_matrix, na.rm = TRUE)
+  n_available           <- rowSums(!is.na(std_matrix))
+  data[[suffix]]        <- rowMeans(std_matrix, na.rm = TRUE)
 
-  # Apply min_features threshold -- insufficient data -> NA
-  below_threshold             <- n_available < min_features
-  data[[suffix]][below_threshold] <- NA_real_
+  below_threshold                  <- n_available < min_features
+  data[[suffix]][below_threshold]  <- NA_real_
+  data[[suffix]][n_available == 0] <- NA_real_
+  data[["n_features_used"]]        <- as.integer(n_available)
+
   if (any(below_threshold)) {
     warning(
-      sum(below_threshold), " community/communities had fewer than ", min_features,
-      " non-missing features and received NA. ",
+      sum(below_threshold), " community/communities had fewer than ",
+      min_features, " non-missing features and received NA. ",
       "Adjust `min_features` to change this threshold."
     )
   }
 
-  # Communities missing everything -> NA
-  data[[suffix]][n_available == 0] <- NA_real_
-  data[["n_features_used"]]        <- as.integer(n_available)
-
   if (verbose) {
-    cat("  Method: mean of", method, "standardized scores\n")
-    cat("  Features (", length(std_cols), "):",
-        paste(std_cols, collapse = ", "), "\n")
+    cat("  Method:", method, "| Standardization: PEcAHN reference (n =",
+        .urbanicity_ref_params$meta$n_communities, ")\n")
+    cat("  Features used (", length(std_cols), "):",
+        paste(gsub(std_suffix, "", std_cols), collapse = ", "), "\n")
     cat("  Score range: [",
         round(min(data[[suffix]], na.rm = TRUE), 3), ",",
         round(max(data[[suffix]], na.rm = TRUE), 3), "]\n")
     cat("  Communities below min_features threshold:", sum(below_threshold), "\n")
   }
 
-  # --- Optionally retain standardized columns --------------------------------
   if (!keep_standardized) data[, std_cols] <- NULL
 
   return(data)
+}
+
+
+# ==============================================================================
+# urbanicity_ref_params() — provenance / inspection helper
+# ==============================================================================
+
+#' Inspect the pre-computed urbanicity reference parameters.
+#'
+#' @description
+#' Returns and optionally prints the standardization parameters derived from
+#' the PEcAHN global reference dataset that are used internally by
+#' [compute_urbanicity_composite_index()]. Useful for documenting methods, checking which
+#' year was used for multi-year variables, or verifying that the package was
+#' built against the expected reference dataset.
+#'
+#' @param method One of `"zscore"` (default) or `"minmax"`.
+#' @param print Logical; if `TRUE` (default), prints a formatted summary.
+#'
+#' @return Invisibly returns a list with elements `params` and `meta`.
+#'
+#' @examples
+#' urbanicity_ref_params()
+#' p <- urbanicity_ref_params(method = "minmax", print = FALSE)
+#'
+#' @seealso [compute_urbanicity_composite_index()]
+#' @export
+urbanicity_ref_params <- function(method = c("zscore", "minmax"),
+                                  print  = TRUE) {
+  method <- match.arg(method)
+  params <- .urbanicity_ref_params[[method]]
+  meta   <- .urbanicity_ref_params$meta
+
+  if (print) {
+    cat(sprintf(
+      "PEcAHN urbanicity reference parameters  [method = %s]\n", method
+    ))
+    cat(sprintf(
+      "Reference dataset: n = %d communities | Generated: %s\n",
+      meta$n_communities,
+      format(meta$generated_at, "%Y-%m-%d %H:%M %Z")
+    ))
+    cat(sprintf(
+      "Multi-year source columns: %s\n\n",
+      paste(grep("[0-9]{4}$", meta$resolved_cols, value = TRUE), collapse = ", ")
+    ))
+    label <- if (method == "zscore") c("mean", "SD") else c("min", "range")
+    cat(sprintf("  %-35s  %10s  %10s\n", "Feature (ref key)", label[1], label[2]))
+    cat(strrep("-", 59), "\n")
+    for (nm in names(params)) {
+      cat(sprintf("  %-35s  %10.4f  %10.4f\n",
+                  nm, params[[nm]]$center, params[[nm]]$scale))
+    }
+  }
+
+  invisible(list(params = params, meta = meta))
+}
+
+
+# ==============================================================================
+# Internal helpers
+# ==============================================================================
+
+#' Resolve feature stubs to actual column names; returns cols and stub mapping.
+#'
+#' For multi-year stubs, selects the most recent year column present in `data`.
+#' Also returns a named character vector mapping each resolved column name back
+#' to its canonical stub, which is the key used for reference param lookup.
+#'
+#' @return list(data = data, cols = character vector, stubs = named character vector)
+#' @keywords internal
+.resolve_feature_cols <- function(data, features, multiyear_stubs, verbose) {
+  resolved_cols <- character(0)
+  stub_map      <- character(0)  # col_name -> stub (or col_name itself)
+
+  for (feat in features) {
+    if (feat %in% multiyear_stubs) {
+      pattern   <- paste0("^", feat, "_[0-9]{4}$")
+      year_cols <- grep(pattern, colnames(data), value = TRUE)
+
+      if (length(year_cols) > 0) {
+        years  <- as.integer(regmatches(year_cols, regexpr("[0-9]{4}$", year_cols)))
+        chosen <- year_cols[which.max(years)]
+        resolved_cols        <- c(resolved_cols, chosen)
+        stub_map[chosen]     <- feat   # "nighttime_light_2024" -> "nighttime_light"
+        if (verbose) {
+          cat(sprintf("  Multi-year stub '%s': using '%s' (year %d) -> ref key '%s'\n",
+                      feat, chosen, max(years), feat))
+        }
+      } else if (feat %in% colnames(data)) {
+        resolved_cols    <- c(resolved_cols, feat)
+        stub_map[feat]   <- feat       # bare column; stub is itself
+        if (verbose) cat("  Using bare column:", feat, "-> ref key:", feat, "\n")
+      } else {
+        warning("Feature '", feat, "' not found in data -- skipping.")
+      }
+
+    } else {
+      if (feat %in% colnames(data)) {
+        resolved_cols  <- c(resolved_cols, feat)
+        stub_map[feat] <- feat         # non-multi-year; stub is itself
+      } else {
+        warning("Feature '", feat, "' not found in data -- skipping.")
+      }
+    }
+  }
+
+  list(data = data, cols = resolved_cols, stubs = stub_map)
 }
