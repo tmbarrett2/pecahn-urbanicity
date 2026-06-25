@@ -472,6 +472,22 @@ comparison_smod <- comparison |>
   )
 ```
 
+
+## Average Urbanicity Score by SMOD Class
+```{r smod_means}
+comparison_smod |>
+  group_by(smod_class, smod_label) |>
+  summarise(
+    n                    = n(),
+    mean_index_6feat     = mean(urban_index_6feat, na.rm = TRUE),
+    mean_index_4feat     = mean(urban_index_4feat, na.rm = TRUE),
+    mean_index_3feat     = mean(urban_index_3feat, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(as.numeric(smod_class))
+
+```
+
 ## Mean Absolute Rank Shift by SMOD Class
 ```{r smod_mean_shift}
 comparison_smod |>
