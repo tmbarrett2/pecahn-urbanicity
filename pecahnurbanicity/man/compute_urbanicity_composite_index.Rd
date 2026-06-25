@@ -6,8 +6,9 @@
 \usage{
 compute_urbanicity_composite_index(
   data,
-  features = c("pct_paved_roads", "travel_time_hospital_min", "travel_time_school_min",
-    "travel_time_urban_center_min", "nighttime_light", "pop_density"),
+  features = c("travel_time_paved_road_min", "travel_time_hospital_min",
+    "travel_time_school_min", "travel_time_urban_center_min", "nighttime_light",
+    "pop_density"),
   method = c("zscore", "minmax"),
   clamp = TRUE,
   min_features = 6L,
@@ -106,7 +107,7 @@ was built from.
 
 Core features included in the composite:
 \describe{
-\item{\code{pct_paved_roads}}{Percent of roads that are paved (higher = more urban)}
+\item{\code{travel_time_paved_road_min}}{Travel time to nearest paved road in minutes (lower = more urban, reverse-coded)}
 \item{\code{travel_time_hospital_min}}{Travel time to nearest hospital in minutes (lower = more urban, reverse-coded)}
 \item{\code{travel_time_school_min}}{Travel time to nearest school in minutes (lower = more urban, reverse-coded)}
 \item{\code{travel_time_urban_center_min}}{Travel time to nearest urban center (lower = more urban, reverse-coded)}

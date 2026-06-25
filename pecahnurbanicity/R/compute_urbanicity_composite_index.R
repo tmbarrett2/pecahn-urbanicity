@@ -20,7 +20,7 @@
 #'
 #' Core features included in the composite:
 #' \describe{
-#'   \item{`pct_paved_roads`}{Percent of roads that are paved (higher = more urban)}
+#'   \item{`travel_time_paved_road_min`}{Travel time to nearest paved road in minutes (lower = more urban, reverse-coded)}
 #'   \item{`travel_time_hospital_min`}{Travel time to nearest hospital in minutes (lower = more urban, reverse-coded)}
 #'   \item{`travel_time_school_min`}{Travel time to nearest school in minutes (lower = more urban, reverse-coded)}
 #'   \item{`travel_time_urban_center_min`}{Travel time to nearest urban center (lower = more urban, reverse-coded)}
@@ -146,7 +146,7 @@
 #' @export
 compute_urbanicity_composite_index <- function(data,
                                 features = c(
-                                  "pct_paved_roads",
+                                  "travel_time_paved_road_min",
                                   "travel_time_hospital_min",
                                   "travel_time_school_min",
                                   "travel_time_urban_center_min",

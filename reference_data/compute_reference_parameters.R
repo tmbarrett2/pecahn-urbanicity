@@ -92,7 +92,7 @@ message("Loaded reference dataset: ", nrow(ref), " communities, ",
 #                  parameters.
 # ------------------------------------------------------------------------------
 features <- c(
-  "pct_paved_roads",
+  "travel_time_paved_road_min",
   "travel_time_hospital_min",
   "travel_time_school_min",
   "travel_time_urban_center_min",

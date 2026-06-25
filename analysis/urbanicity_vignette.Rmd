@@ -349,7 +349,14 @@ all_plots$temporal_plots$nighttime_light
 
 # Compute Urbanicity Composite Index
 
-Once urbanicity metrics have been extracted with `compute_urbanicity_iterative()`, they can be combined into a single composite urbanicity score using `compute_urbanicity_composite_index()`. This function standardizes each of the six core features against the PEcAHN global reference distribution (1,400 globally stratified communities) and returns their row-wise mean as a composite index.
+Once urbanicity metrics have been extracted with `compute_urbanicity_iterative()`, they can be combined into a single composite urbanicity score using `compute_urbanicity_composite_index()`. This function standardizes each of the six core features against the PEcAHN global reference distribution (1,400 globally stratified communities) and returns their row-wise mean as a composite index. The 6 core features are:
+
+- travel_time_paved_road_min
+- travel_time_hospital_min
+- travel_time_school_min
+- travel_time_urban_center_min
+- nighttime_light
+- pop_density
 
 Scores are anchored to a fixed global scale, so they are directly comparable across study sites, datasets, and future data collection waves regardless of local sample size or composition.
 
