@@ -1,0 +1,569 @@
+---
+title: "Testing Different Composite Indices"
+author: "Lev Kolinski"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Loading Packages
+```{r setup}
+library(tidyverse)
+library(rnaturalearthdata)
+library(rnaturalearth)
+library(pecahnurbanicity)
+```
+
+# Loading In 1400 Urbanicity Reference Coordinates
+```{r loading_reference}
+ref_data <- readRDS("/Users/levkolinski/Desktop/pecahn-urbanicity/reference_data/urbanicity_reference_dataset.rds")
+
+### getting lat/lon values
+ref_data <- ref_data |>
+  mutate(
+    lat = as.numeric(gsub(",.*", "", community)),
+    lon = as.numeric(gsub(".*, ", "", community))
+  )
+```
+
+# Imputing weird nighttime light outlier
+Subbing in the average nighttime light value for the other sites in that same smod class (22)
+
+```{r impute_nightlight}
+# get the community to replace
+target_community <- ref_data |> 
+  arrange(desc(nighttime_light_2025)) |> 
+  slice(1) |> 
+  pull(community)
+
+# replace its nightlight values with smod_class 22 averages
+years <- 2015:2025
+
+avg_smod_11_nightlight <- sapply(years, function(yr) {
+  col_name <- paste0("nighttime_light_", yr)
+  ref_data |> 
+    filter(smod_class == 22) |> 
+    pull(all_of(col_name)) |> 
+    mean(na.rm = TRUE)
+})
+names(avg_smod_11_nightlight) <- years
+
+ref_data <- ref_data |> 
+  mutate(across(
+    all_of(paste0("nighttime_light_", years)),
+    ~ if_else(community == target_community,
+              avg_smod_11_nightlight[str_extract(cur_column(), "\\d{4}")],
+              .x)
+  ))
+
+```
+
+# Calculating Indices with Different Feature Sets
+
+## All 6 Core Features
+```{r all_features}
+ref_data_comp_6 <- compute_urbanicity_composite_index(
+  ref_data, method = "zscore",
+  features = c(
+    "travel_time_paved_road_min", "travel_time_hospital_min",
+    "travel_time_school_min",     "travel_time_urban_center_min",
+    "nighttime_light",            "pop_density"
+  ),
+  min_features = 6,
+  suffix = "urban_index_6feat",
+  keep_standardized = T
+)
+```
+
+### Pearson Correlation Plot of 6 Core Features
+```{r corr_plot}
+z_features <- ref_data_comp_6 |> 
+  select(travel_time_paved_road_min_z, travel_time_school_min_z, travel_time_urban_center_min_z, travel_time_hospital_min_z, nighttime_light_2025_z, pop_density_2025_z) |> 
+  drop_na() |> 
+  as.matrix()
+  
+M = cor(z_features,
+                 method = "pearson")
+
+corrplot::corrplot(M, method = "number",order = 'AOE')
+
+```
+
+## 4 Core Features: Nighttime Light, Population Density, Time to Urban Center, Time to Paved Road
+```{r four_features}
+ref_data_comp_4 <- compute_urbanicity_composite_index(
+  ref_data, method = "zscore",
+  features = c(
+    "travel_time_urban_center_min", "nighttime_light",
+    "pop_density",                  "travel_time_paved_road_min"
+  ),
+  min_features = 4,
+  suffix = "urban_index_4feat",
+  keep_standardized = T
+)
+```
+
+## 3 Core Features: Nighttime Light, Population Density, Time to Urban Center
+```{r three_features}
+ref_data_comp_3 <- compute_urbanicity_composite_index(
+  ref_data, method = "zscore",
+  features = c(
+    "travel_time_urban_center_min", "nighttime_light", "pop_density"
+  ),
+  min_features = 3,
+  suffix = "urban_index_3feat",
+  keep_standardized = T
+)
+```
+
+# Comparing Composite Indices
+
+```{r combine}
+comparison <- data.frame(
+  urban_index_6feat = ref_data_comp_6$urban_index_6feat,
+  urban_index_4feat = ref_data_comp_4$urban_index_4feat,
+  urban_index_3feat = ref_data_comp_3$urban_index_3feat
+) |>
+  mutate(
+    rank_6 = rank(urban_index_6feat, na.last = "keep"),
+    rank_4 = rank(urban_index_4feat, na.last = "keep"),
+    rank_3 = rank(urban_index_3feat, na.last = "keep"),
+    rank_shift_6v4 = (rank_6 - rank_4),
+    rank_shift_6v3 = (rank_6 - rank_3),
+    rank_shift_4v3 = (rank_4 - rank_3)
+  )
+```
+
+# Feature Distributions
+
+```{r feature_distributions, fig.width = 10, fig.height = 8}
+feature_cols <- c(
+  "travel_time_paved_road_min",
+  "travel_time_hospital_min",
+  "travel_time_school_min",
+  "travel_time_urban_center_min",
+  "nighttime_light_2025",
+  "pop_density_2025", "pct_paved_roads"
+)
+
+feature_labels <- c(
+  "travel_time_paved_road_min"  = "Travel time: paved road (min)",
+  "travel_time_hospital_min"    = "Travel time: hospital (min)",
+  "travel_time_school_min"      = "Travel time: school (min)",
+  "travel_time_urban_center_min"= "Travel time: urban center (min)",
+  "nighttime_light_2025"        = "Nighttime light (2025)",
+  "pop_density_2025"            = "Population density (2025)",
+   "pct_paved_roads"            = "% Paved Roads"
+
+)
+
+ref_data |>
+  select(all_of(feature_cols)) |>
+  pivot_longer(everything(), names_to = "feature", values_to = "value") |>
+  mutate(feature = recode(feature, !!!feature_labels)) |>
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 60, fill = "#2166ac", alpha = 0.7) +
+  facet_wrap(~ feature, scales = "free", ncol = 2) +
+  labs(
+    x     = NULL,
+    y     = "Count",
+    title = "Reference dataset: raw feature distributions (post-imputation)"
+  ) +
+  theme_minimal() +
+  theme(strip.text = element_text(size = 9))
+```
+
+```{r feature_distributions_log, fig.width = 10, fig.height = 8}
+ref_data |>
+  select(all_of(feature_cols)) |>
+  pivot_longer(everything(), names_to = "feature", values_to = "value") |>
+  mutate(feature = recode(feature, !!!feature_labels)) |>
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 60, fill = "#d6604d", alpha = 0.7) +
+  scale_x_continuous(trans = scales::log1p_trans())+
+  facet_wrap(~ feature, scales = "free", ncol = 2) +
+  labs(
+    x     = "Value (log(1 + x) scale)",
+    y     = "Count",
+    title = "Reference dataset: raw feature distributions (log10 scale) (post-imputation)"
+  ) +
+  theme_minimal() +
+  theme(strip.text = element_text(size = 9))
+```
+
+# Spearman Rank Correlations of Composite Indices
+```{r correlations}
+cor_matrix <- cor(
+  comparison[, c("urban_index_6feat", "urban_index_4feat", "urban_index_3feat")],
+  method = "spearman",
+  use    = "pairwise.complete.obs"
+)
+round(cor_matrix, 3)
+```
+
+# Rank Shift Summaries
+```{r rank_shifts}
+cat("--- 6-feature vs. 4-feature ---\n")
+print(summary(comparison$rank_shift_6v4))
+
+cat("\n--- 6-feature vs. 3-feature ---\n")
+print(summary(comparison$rank_shift_6v3))
+
+cat("\n--- 4-feature vs. 3-feature ---\n")
+print(summary(comparison$rank_shift_4v3))
+
+cat("\nSites shifting > 100 ranks (6v4):", sum(comparison$rank_shift_6v4 > 100, na.rm = TRUE), "\n")
+cat("Sites shifting > 100 ranks (6v3):", sum(comparison$rank_shift_6v3 > 100, na.rm = TRUE), "\n")
+cat("Sites shifting > 100 ranks (4v3):", sum(comparison$rank_shift_4v3 > 100, na.rm = TRUE), "\n")
+```
+
+# Score Distributions
+```{r distributions}
+comparison |>
+  select(urban_index_6feat, urban_index_4feat, urban_index_3feat) |>
+  pivot_longer(everything(), names_to = "index", values_to = "score") |>
+  mutate(index = recode(index,
+    urban_index_6feat = "6 features",
+    urban_index_4feat = "4 features",
+    urban_index_3feat = "3 features"
+  )) |>
+  ggplot(aes(x = score, fill = index)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_manual(values = c(
+    "6 features" = "#2166ac",
+    "4 features" = "#f4a582",
+    "3 features" = "#d6604d"
+  )) +
+  labs(
+    x = "Urbanicity index (average z-score)",
+    y = "Density",
+    fill = "Feature set",
+    title = "Score distributions by feature set"
+  ) +
+  theme_minimal()
+```
+
+# Pairwise Scatter Plots
+```{r scatterplots, fig.width = 9, fig.height = 3.5}
+p1 <- ggplot(comparison, aes(x = urban_index_6feat, y = urban_index_4feat)) +
+  geom_point(alpha = 0.3, size = 0.7) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "6-feature index", y = "4-feature index",
+       title = "6 vs. 4 features") +
+  theme_minimal()
+
+p2 <- ggplot(comparison, aes(x = urban_index_6feat, y = urban_index_3feat)) +
+  geom_point(alpha = 0.3, size = 0.7) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "6-feature index", y = "3-feature index",
+       title = "6 vs. 3 features") +
+  theme_minimal()
+
+p3 <- ggplot(comparison, aes(x = urban_index_4feat, y = urban_index_3feat)) +
+  geom_point(alpha = 0.3, size = 0.7) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "4-feature index", y = "3-feature index",
+       title = "4 vs. 3 features") +
+  theme_minimal()
+
+gridExtra::grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+# Rank Shift Distributions
+```{r rank_shift_distributions}
+comparison |>
+  select(rank_shift_6v4, rank_shift_6v3, rank_shift_4v3) |>
+  pivot_longer(everything(), names_to = "comparison", values_to = "rank_shift") |>
+  mutate(comparison = recode(comparison,
+    rank_shift_6v4 = "6 vs. 4 features",
+    rank_shift_6v3 = "6 vs. 3 features",
+    rank_shift_4v3 = "4 vs. 3 features"
+  )) |>
+  ggplot(aes(x = rank_shift, fill = comparison)) +
+  geom_histogram(binwidth = 25, alpha = 0.7, position = "identity") +
+  scale_fill_manual(values = c(
+    "6 vs. 4 features" = "#2166ac",
+    "6 vs. 3 features" = "#d6604d",
+    "4 vs. 3 features" = "#f4a582"
+  )) +
+  facet_wrap(~ comparison, ncol = 1) +
+  labs(
+    x    = "Absolute rank shift",
+    y    = "Count",
+    fill = "Comparison",
+    title = "Rank shift distributions across feature sets"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+# Largest Rank Movers (6-feature vs. 4-feature)
+```{r big_movers_64}
+# Sites with the largest rank shifts between full and second-smallest feature set
+big_movers_64 <- comparison |>
+  mutate(
+    row_id = row_number(),
+    lon    = ref_data$lon,
+    lat    = ref_data$lat
+  ) |>
+  filter(abs(rank_shift_6v4) > 100) |>
+  arrange(desc(abs(rank_shift_6v4))) |>
+  select(row_id, lon, lat,
+         urban_index_6feat, urban_index_4feat,
+         rank_6, rank_4, rank_shift_6v4)
+
+cat("Sites shifting > 100 ranks (6v4):", nrow(big_movers_64), "\n\n")
+head(big_movers_64, 20)
+```
+
+```{r biggest_mover_map64}
+world_map  <- ne_countries(scale = "medium", returnclass = "sf")
+
+ggplot() +
+  geom_sf(data = world_map, fill = "grey15", color = "grey35",
+          linewidth = 0.15) +
+  geom_point(
+    data  = big_movers_64,
+    aes(x = lon, y = lat, color =rank_shift_6v4),
+    size = 1.3, alpha = 0.85, shape = 16
+  ) +
+  scale_color_viridis_c(
+    option = "inferno",
+    name   = "Rank\nshift"
+  )+
+  labs(
+    title    = "Rank shift: 6 v 4 Feature",
+    x = NULL, y = "% of global total"
+  ) +
+  coord_sf(expand = FALSE) +
+  theme_void(base_size = 10) +
+  theme(
+    plot.background = element_rect(fill = "grey10", color = NA),
+    plot.title      = element_text(color = "white", face = "bold", size = 11),
+    plot.subtitle   = element_text(color = "grey70", size = 8),
+    legend.position = "right",
+    legend.title    = element_text(color = "white", size = 7.5),
+    legend.text     = element_text(color = "grey85", size = 6.5),
+    legend.key.size = unit(0.35, "cm"),
+    plot.margin     = margin(5, 10, 8, 10)
+  )
+```
+
+
+# Largest Rank Movers (6-feature vs. 3-feature)
+```{r big_movers_63}
+# Sites with the largest rank shifts between full and minimal feature set
+big_movers <- comparison |>
+  mutate(
+    row_id = row_number(),
+    lon    = ref_data$lon,
+    lat    = ref_data$lat
+  ) |>
+  filter(abs(rank_shift_6v3) > 100) |>
+  arrange(desc(abs(rank_shift_6v3))) |>
+  select(row_id, lon, lat,
+         urban_index_6feat, urban_index_3feat,
+         rank_6, rank_3, rank_shift_6v3)
+
+cat("Sites shifting > 100 ranks (6v3):", nrow(big_movers), "\n\n")
+head(big_movers, 20)
+```
+
+```{r biggest_mover_map_63}
+ggplot() +
+  geom_sf(data = world_map, fill = "grey15", color = "grey35",
+          linewidth = 0.15) +
+  geom_point(
+    data  = big_movers,
+    aes(x = lon, y = lat, color =rank_shift_6v3),
+    size = 1.3, alpha = 0.85, shape = 16
+  ) +
+  scale_color_viridis_c(
+    option = "inferno",
+    name   = "Rank\nshift"
+  )+
+  labs(
+    title    = "Rank shift: 6 v 3 Feature",
+    x = NULL, y = "% of global total"
+  ) +
+  coord_sf(expand = FALSE) +
+  theme_void(base_size = 10) +
+  theme(
+    plot.background = element_rect(fill = "grey10", color = NA),
+    plot.title      = element_text(color = "white", face = "bold", size = 11),
+    plot.subtitle   = element_text(color = "grey70", size = 8),
+    legend.position = "right",
+    legend.title    = element_text(color = "white", size = 7.5),
+    legend.text     = element_text(color = "grey85", size = 6.5),
+    legend.key.size = unit(0.35, "cm"),
+    plot.margin     = margin(5, 10, 8, 10)
+  )
+```
+
+# Largest Rank Movers (4-feature vs. 3-feature)
+```{r big_movers_43}
+# Sites with the largest rank shifts between two smallest feature sets
+big_movers_43 <- comparison |>
+  mutate(
+    row_id = row_number(),
+    lon    = ref_data$lon,
+    lat    = ref_data$lat
+  ) |>
+  filter(abs(rank_shift_4v3) > 100) |>
+  arrange(desc(abs(rank_shift_4v3))) |>
+  select(row_id, lon, lat,
+         urban_index_4feat, urban_index_3feat,
+         rank_4, rank_3, rank_shift_4v3)
+
+cat("Sites shifting > 100 ranks (4v3):", nrow(big_movers_43), "\n\n")
+head(big_movers_43, 20)
+```
+
+```{r biggest_mover_map_43}
+ggplot() +
+  geom_sf(data = world_map, fill = "grey15", color = "grey35",
+          linewidth = 0.15) +
+  geom_point(
+    data  = big_movers_43,
+    aes(x = lon, y = lat, color =rank_shift_4v3),
+    size = 1.3, alpha = 0.85, shape = 16
+  ) +
+  scale_color_viridis_c(
+    option = "inferno",
+    name   = "Rank\nshift"
+  )+
+  labs(
+    title    = "Rank shift: 4 v 3 Feature",
+    x = NULL, y = "% of global total"
+  ) +
+  coord_sf(expand = FALSE) +
+  theme_void(base_size = 10) +
+  theme(
+    plot.background = element_rect(fill = "grey10", color = NA),
+    plot.title      = element_text(color = "white", face = "bold", size = 11),
+    plot.subtitle   = element_text(color = "grey70", size = 8),
+    legend.position = "right",
+    legend.title    = element_text(color = "white", size = 7.5),
+    legend.text     = element_text(color = "grey85", size = 6.5),
+    legend.key.size = unit(0.35, "cm"),
+    plot.margin     = margin(5, 10, 8, 10)
+  )
+```
+
+# Rank Shifts by SMOD Class
+
+```{r smod_rank_shifts}
+smod_labels <- c(
+  "11" = "Very Low Density Rural",
+  "12" = "Low Density Rural",
+  "13" = "Rural Cluster",
+  "21" = "Suburban/Peri-Urban",
+  "22" = "Semi-Dense Urban Cluster",
+  "23" = "Dense Urban Cluster",
+  "30" = "Urban Centre"
+)
+
+comparison_smod <- comparison |>
+  mutate(
+    row_id     = row_number(),
+    smod_class = as.character(ref_data$smod_class),
+    smod_label = recode(smod_class, !!!smod_labels),
+    lon        = ref_data$lon,
+    lat        = ref_data$lat
+  )
+```
+
+## Mean Absolute Rank Shift by SMOD Class
+```{r smod_mean_shift}
+comparison_smod |>
+  group_by(smod_class, smod_label) |>
+  summarise(
+    n               = n(),
+    mean_shift_6v4  = mean(abs(rank_shift_6v4), na.rm = TRUE),
+    mean_shift_6v3  = mean(abs(rank_shift_6v3), na.rm = TRUE),
+    mean_shift_4v3  = mean(abs(rank_shift_4v3), na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(as.numeric(smod_class))
+```
+
+## Rank Shift Distributions Faceted by SMOD Class
+```{r smod_shift_boxplot, fig.width = 10, fig.height = 7}
+comparison_smod |>
+  select(smod_label, rank_shift_6v4, rank_shift_6v3, rank_shift_4v3) |>
+  pivot_longer(
+    cols      = starts_with("rank_shift"),
+    names_to  = "comparison",
+    values_to = "rank_shift"
+  ) |>
+  mutate(
+    comparison = recode(comparison,
+      rank_shift_6v4 = "6 vs. 4 features",
+      rank_shift_6v3 = "6 vs. 3 features",
+      rank_shift_4v3 = "4 vs. 3 features"
+    ),
+    smod_label = factor(smod_label, levels = smod_labels)
+  ) |>
+  ggplot(aes(x = smod_label, y = rank_shift, fill = comparison)) +
+  geom_boxplot(alpha = 0.7, outlier.size = 0.5, outlier.alpha = 0.4) +
+  scale_fill_manual(values = c(
+    "6 vs. 4 features" = "#2166ac",
+    "6 vs. 3 features" = "#d6604d",
+    "4 vs. 3 features" = "#f4a582"
+  )) +
+  labs(
+    x     = NULL,
+    y     = "Absolute rank shift",
+    fill  = "Comparison",
+    title = "Rank shift by SMOD class and feature set"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1, size = 8),
+    legend.position = "top"
+  )
+```
+
+## Proportion of Sites with Large Rank Shifts (>100) by SMOD Class
+```{r smod_large_shifts, fig.width = 10, fig.height = 5}
+comparison_smod |>
+  group_by(smod_class, smod_label) |>
+  summarise(
+    n                  = n(),
+    pct_large_6v4      = mean(abs(rank_shift_6v4) > 100, na.rm = TRUE),
+    pct_large_6v3      = mean(abs(rank_shift_6v3) > 100, na.rm = TRUE),
+    pct_large_4v3      = mean(abs(rank_shift_4v3) > 100, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  pivot_longer(
+    cols      = starts_with("pct_large"),
+    names_to  = "comparison",
+    values_to = "pct"
+  ) |>
+  mutate(
+    comparison = recode(comparison,
+      pct_large_6v4 = "6 vs. 4 features",
+      pct_large_6v3 = "6 vs. 3 features",
+      pct_large_4v3 = "4 vs. 3 features"
+    ),
+    smod_label = factor(smod_label, levels = smod_labels)
+  ) |>
+  ggplot(aes(x = smod_label, y = pct, fill = comparison)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c(
+    "6 vs. 4 features" = "#2166ac",
+    "6 vs. 3 features" = "#d6604d",
+    "4 vs. 3 features" = "#f4a582"
+  )) +
+  labs(
+    x     = NULL,
+    y     = "% of sites shifting > 100 ranks",
+    fill  = "Comparison",
+    title = "Proportion of sites with large rank shifts (> 100) by SMOD class"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1, size = 8),
+    legend.position = "top"
+  )
+```
