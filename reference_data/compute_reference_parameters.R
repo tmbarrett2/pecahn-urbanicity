@@ -81,6 +81,37 @@ ref <- readRDS(ref_path)
 message("Loaded reference dataset: ", nrow(ref), " communities, ",
         ncol(ref), " columns")
 
+# ------------------------------------------------------------------------------
+# 1b. Impute outlier nighttime light values
+#
+# One community has anomalously high nighttime light readings. Its values across all years are replaced with the
+# mean nighttime light of smod_class 22 (Semi-dense Urban Cluster) communities, which
+# represents the appropriate reference category for that settlement type.
+# ------------------------------------------------------------------------------
+nightlight_years <- 2015:2025
+nightlight_cols  <- paste0("nighttime_light_", nightlight_years)
+nightlight_cols  <- intersect(nightlight_cols, colnames(ref))
+
+# Identify the outlier community (highest value in most recent available year)
+most_recent_col     <- nightlight_cols[length(nightlight_cols)]
+target_community    <- ref$community[which.max(ref[[most_recent_col]])]
+
+message(sprintf("Imputing nighttime light for outlier community: '%s'", target_community))
+
+# Compute smod_class 22 mean for each year
+smod22_means <- sapply(nightlight_cols, function(col) {
+  mean(ref[[col]][ref$smod_class == 22], na.rm = TRUE)
+})
+
+# Replace outlier community values
+for (col in nightlight_cols) {
+  ref[[col]] <- ifelse(ref$community == target_community,
+                       smod22_means[[col]],
+                       ref[[col]])
+}
+
+message(sprintf("  Replaced %d nighttime_light columns with smod_class 22 means",
+                length(nightlight_cols)))
 
 # ------------------------------------------------------------------------------
 # 2. Feature configuration
