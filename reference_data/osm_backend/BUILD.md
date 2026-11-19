@@ -109,3 +109,20 @@ curl "http://localhost:12345/api/interpreter?data=[out:json];node(1);out;"
 ```
 A well-formed (even if empty) JSON response confirms the instance is live before
 launching the urbanicity run.
+
+---
+
+## 2026-11 rebuild: adding the study sites
+
+The June instance only had local 1 km layers around the 1,400 reference points.
+To measure the PEcAHN study sites (`PEcAHN_2026_CommunityInfo_All_9July2026.txt`,
+379 sites) on the **same snapshot**, the mirror is rebuilt with buffers around
+reference points + study sites (1,779 points → 1,591 dissolved polygons, ~48,100 km²).
+
+- Same planet (2026-06-08) and the **same `global_layers.osm.pbf`** (reused, not
+  rebuilt), so the reference points see identical OSM data.
+- Only 3a (buffers), 3c–3d (clip/filter/merge) and 3e (DB init) are re-run.
+
+Everything, including the study-site metrics run (`../06_compute_study_sites.R`),
+is chained in `rebuild_mirror_and_run_sites.ps1`, which logs to `C:\osm\logs\`
+and can resume from a step with `-StartAt buffers|extract|init|sites`.
